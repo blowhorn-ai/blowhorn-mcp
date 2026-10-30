@@ -60,11 +60,25 @@ and add:
 | Repository | `blowhorn-mcp` |
 | Workflow filename | `publish.yml` |
 | Environment | `npm` |
+| Allow npm publish | ticked |
+
+Tick "allow npm publish". Trusted publisher configs created after
+September 3, 2026 allow only `npm stage publish` by default, and this
+workflow runs `npm publish`, so without the tick the publish fails with
+E404.
 
 Then create the `npm` environment in this repo's GitHub settings
-(Settings, Environments), ideally with required reviewers. While there, in
-the package's npm settings, consider requiring two-factor authentication and
-disallowing tokens for publishing, so only the workflow can publish.
+(Settings, Environments) and set both of these:
+
+- Deployment branches: selected branches only, `master`. A dispatch runs
+  the workflow file from the branch it names, so this is what stops a
+  workflow edited on another branch from publishing.
+- Required reviewers: at least one maintainer, who approves each publish
+  run before it starts.
+
+While there, in the package's npm settings, consider requiring two-factor
+authentication and disallowing tokens for publishing, so only the workflow
+can publish.
 
 ## Every release
 
@@ -75,9 +89,10 @@ disallowing tokens for publishing, so only the workflow can publish.
    a dirty tree or an existing tag, and creates tag `vX.Y.Z` and its GitHub
    release with `gh`.
 5. `make publish`. It runs
-   `gh workflow run publish.yml -f version=X.Y.Z --repo blowhorn-ai/blowhorn-mcp`.
-   The workflow checks out tag `vX.Y.Z` (and fails if it is missing), checks
-   that `package.json` says `X.Y.Z`, runs `make check`, refuses a version
+   `gh workflow run publish.yml --ref master -f version=X.Y.Z --repo blowhorn-ai/blowhorn-mcp`.
+   The workflow fails unless it runs from `master`, checks out tag `vX.Y.Z`
+   (and fails if it is missing or is not an ancestor of `origin/master`),
+   checks that `package.json` says `X.Y.Z`, runs `make check`, refuses a version
    already on npm, publishes with `npm publish --provenance --access public`
    and confirms the version with `npm view`.
 

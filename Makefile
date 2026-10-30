@@ -63,5 +63,5 @@ release: check
 
 ## publish: run the npm publish workflow for $(VERSION) (needs the $(TAG) release).
 publish:
-	gh workflow run publish.yml --repo $(REPO) -f version=$(VERSION)
+	gh workflow run publish.yml --repo $(REPO) --ref master -f version=$(VERSION)
 	@echo "publish: started; follow it with: gh run watch --repo $(REPO)"
