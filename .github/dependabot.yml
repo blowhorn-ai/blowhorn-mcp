@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # Dev tooling (Ajv). The published package has no dependencies.
+  - package-ecosystem: npm
+    directory: /tools
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
