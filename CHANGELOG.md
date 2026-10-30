@@ -3,6 +3,13 @@
 All notable changes to this repo. Versions are the `blowhorn-mcp` npm
 launcher's, which every listing file follows.
 
+## 0.1.1
+
+- The publish workflow now also publishes `server.json` to the MCP Registry
+  with GitHub OIDC (`mcp-publisher`, pinned and checksum-verified), right
+  after the npm publish.
+- First version published through npm trusted publishing, with provenance.
+
 ## 0.1.0
 
 - Moved the `blowhorn-mcp` npm launcher and its shared core

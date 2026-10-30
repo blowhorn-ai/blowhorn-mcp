@@ -26,9 +26,10 @@ A release is three things with that version:
 2. The `blowhorn-mcp` npm package, published by `.github/workflows/publish.yml`
    with provenance through npm trusted publishing (OIDC). No npm token is
    stored anywhere.
-3. Later, by hand, the MCP Registry entry from `server.json`.
+3. The MCP Registry entry from `server.json`, published by the same workflow
+   right after the npm publish, with GitHub OIDC.
 
-## One-time setup (not done yet)
+## One-time setup (done for 0.1.0)
 
 ### a. First publish of 0.1.0, by hand
 
@@ -100,21 +101,29 @@ can publish.
    `package.json` says `X.Y.Z`, runs `make install`
    (with lifecycle scripts disabled) and `make check`, and publishes with
    `npm publish --provenance --access public`, which itself fails on a
-   version already on npm.
+   version already on npm. It then also publishes `server.json` to the MCP
+   Registry (see below).
 
-## MCP Registry (separate, by hand, not automated here)
+## MCP Registry
 
-After the npm publish of the same version, an owner of the `blowhorn-ai`
-GitHub org publishes `server.json`:
+The publish workflow publishes `server.json` right after the npm publish. It
+installs `mcp-publisher` at a pinned version, verified by sha256, checks that
+`server.json`'s `version` and `packages[0].version` equal the release
+version, then runs `mcp-publisher login github-oidc` and
+`mcp-publisher publish` with the job's GitHub OIDC token. No registry secret
+is stored.
+
+The registry checks that the npm package's `mcpName` (in `package.json`)
+equals `server.json`'s `name`, `io.github.blowhorn-ai/blowhorn`, which is why
+the npm publish comes first.
+
+If the workflow's registry step fails after npm succeeded, an owner of the
+`blowhorn-ai` GitHub org publishes by hand from the repo root:
 
 ```bash
 mcp-publisher login github
 mcp-publisher publish
 ```
-
-The registry checks that the npm package's `mcpName` (in `package.json`)
-equals `server.json`'s `name`, `io.github.blowhorn-ai/blowhorn`, which is why
-the npm publish comes first.
 
 ## The private Blowhorn repo
 
@@ -134,10 +143,11 @@ downloads them again and rewrites `SOURCES.json`; review the diff and run
 ## GitHub Actions pins
 
 Third-party actions are pinned to full commit SHAs with the version in a
-comment: `actions/checkout` v4.2.2 and `actions/setup-node` v4.4.0.
+comment: `actions/checkout` v7.0.1 and `actions/setup-node` v7.1.0.
 Dependabot proposes updates weekly. It does not bump the npm version
-the publish workflow installs (`npm install --global npm@X.Y.Z`), so a
-maintainer raises that pin by hand.
+the publish workflow installs (`npm install --global npm@X.Y.Z`) or the
+`mcp-publisher` version and sha256, so a maintainer raises those pins by
+hand.
 
 ## Contributors
 
