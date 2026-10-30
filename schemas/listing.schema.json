@@ -7,13 +7,13 @@
   "properties": {
     "$schema": { "type": "string" },
     "slug": { "description": "Plugin and extension name in every marketplace.", "$ref": "#/$defs/kebab" },
-    "displayName": { "type": "string", "minLength": 1 },
-    "title": { "description": "MCP Registry title.", "type": "string", "minLength": 1, "maxLength": 100 },
+    "title": { "description": "Display name: the MCP Registry title, and the name maintainers type into marketplace forms.", "type": "string", "minLength": 1, "maxLength": 100 },
     "registryDescription": { "description": "MCP Registry description; the registry caps it at 100 characters.", "type": "string", "minLength": 1, "maxLength": 100 },
     "shortDescription": { "description": "Plugin and extension manifests.", "type": "string", "minLength": 1, "maxLength": 300 },
-    "longDescription": { "description": "For listing forms that take a longer description.", "type": "string", "minLength": 1, "maxLength": 2000 },
+    "longDescription": { "description": "Copy maintainers paste into marketplace forms that take a longer description; no generated file carries it. scripts/check.js requires it to name Blowhorn <minimumAppVersion>.", "type": "string", "minLength": 1, "maxLength": 2000 },
     "keywords": { "type": "array", "items": { "$ref": "#/$defs/kebab" }, "minItems": 1, "uniqueItems": true },
     "urls": {
+      "description": "Links maintainers paste into marketplace forms. docs is the generated manifests' homepage; scripts/check.js requires setup, privacy, terms, support and download to appear in README.md or MAINTAINERS.md.",
       "type": "object",
       "properties": {
         "homepage": { "$ref": "#/$defs/httpsUrl" },
@@ -28,6 +28,7 @@
       "additionalProperties": false
     },
     "logo": {
+      "description": "svg is the Cursor plugin logo; png is the 400x400 image for marketplace forms, which scripts/check.js logo verifies.",
       "type": "object",
       "properties": {
         "svg": { "$ref": "#/$defs/relativePath", "type": "string", "pattern": "\\.svg$" },
@@ -52,7 +53,7 @@
       "minItems": 1,
       "uniqueItems": true
     },
-    "minimumAppVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "minimumAppVersion": { "description": "Oldest Blowhorn desktop app with the MCP server. scripts/check.js requires README.md, llms-install.md and skills/blowhorn/SKILL.md to name Blowhorn <minimumAppVersion>.", "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
     "commands": {
       "description": "How each client starts the server, in that client's own variable syntax.",
       "type": "object",
@@ -65,7 +66,7 @@
       "additionalProperties": false
     }
   },
-  "required": ["slug", "displayName", "title", "registryDescription", "shortDescription", "longDescription", "keywords", "urls", "logo", "author", "maintainers", "minimumAppVersion", "commands"],
+  "required": ["slug", "title", "registryDescription", "shortDescription", "longDescription", "keywords", "urls", "logo", "author", "maintainers", "minimumAppVersion", "commands"],
   "additionalProperties": false,
   "$defs": {
     "kebab": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },

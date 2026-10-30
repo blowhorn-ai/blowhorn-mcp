@@ -9,7 +9,8 @@ Notes for coding agents working in this repo.
   edit them by hand: change the source, run `make generate`, commit both.
 - **Check before you finish**: run `make check`. It fails on drift between
   the sources and the generated files, schema errors, copy rule breaks, a bad
-  skill frontmatter, a wrong logo size, failing tests, or a tarball holding
+  skill frontmatter, docs that disagree with `listing/listing.json`'s
+  `minimumAppVersion` or `urls`, a wrong logo size, failing tests, or a tarball holding
   anything but the launcher.
 - **Copy rules** (all text files except `LICENSE`, `schemas/vendor/` and
   lock files): hyphens, never em or en dashes; say "Blowhorn"; no persona

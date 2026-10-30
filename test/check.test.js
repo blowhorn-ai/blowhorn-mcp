@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const { pngSize, frontmatter, RULES } = require("../scripts/check.js");
+const { pngSize, frontmatter, factProblems, RULES } = require("../scripts/check.js");
 
 const broken = (line) => RULES.filter(([, re]) => re.test(line)).map(([rule]) => rule);
 
@@ -28,4 +28,25 @@ test("copy rules catch what they forbid and pass plain copy", () => {
   for (const line of ["Blowhorn runs locally on your Mac over stdio.", "Once the npm package is published, npx -y blowhorn-mcp will work.", "runs-on: ubuntu-latest"]) {
     assert.deepStrictEqual(broken(line), [], line);
   }
+});
+
+test("factProblems passes docs that match the listing and names each mismatch", () => {
+  const listing = {
+    minimumAppVersion: "1.2.3",
+    longDescription: "Requires Blowhorn 1.2.3 or later.",
+    urls: { setup: "https://e.test/setup", privacy: "https://e.test/privacy", terms: "https://e.test/terms", support: "https://e.test/support", download: "https://e.test/download" },
+  };
+  const good = {
+    "README.md": "Needs Blowhorn 1.2.3. https://e.test/setup https://e.test/privacy https://e.test/terms",
+    "MAINTAINERS.md": "https://e.test/support https://e.test/download",
+    "llms-install.md": "Install Blowhorn 1.2.3 or later",
+    "skills/blowhorn/SKILL.md": "Blowhorn 1.2.3",
+  };
+  assert.deepStrictEqual(factProblems(listing, (f) => good[f]), []);
+  const stale = { ...good, "llms-install.md": "Install Blowhorn 1.2.2 or later", "MAINTAINERS.md": "https://e.test/support" };
+  const problems = factProblems({ ...listing, longDescription: "Requires Blowhorn." }, (f) => stale[f]);
+  assert.strictEqual(problems.length, 3, problems.join("\n"));
+  assert.ok(problems.some((p) => p.includes("llms-install.md")));
+  assert.ok(problems.some((p) => p.includes("longDescription")));
+  assert.ok(problems.some((p) => p.includes("urls.download")));
 });

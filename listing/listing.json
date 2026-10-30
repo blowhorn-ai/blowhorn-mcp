@@ -1,7 +1,6 @@
 {
   "$schema": "../schemas/listing.schema.json",
   "slug": "blowhorn",
-  "displayName": "Blowhorn",
   "title": "Blowhorn",
   "registryDescription": "Blowhorn's local MCP server on your Mac: every Blowhorn command as a tool, dry run first.",
   "shortDescription": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",

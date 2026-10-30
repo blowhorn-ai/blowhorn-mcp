@@ -6,7 +6,7 @@ REPO    := blowhorn-ai/blowhorn-mcp
 VERSION := $(shell node -p "require('./package.json').version")
 TAG     := v$(VERSION)
 
-.PHONY: install generate check check-drift validate check-copy check-skill check-logo test check-pack schemas-refresh release publish
+.PHONY: install generate check check-drift validate check-copy check-skill check-facts check-logo test check-pack schemas-refresh release publish
 
 ## install: dev tooling (Ajv) into tools/node_modules. The root package has
 ## "os": ["darwin"], which makes npm refuse any install at the root on other
@@ -22,7 +22,7 @@ generate: tools/node_modules/ajv/package.json
 	node scripts/generate.js
 
 ## check: everything CI checks.
-check: check-drift validate check-copy check-skill check-logo test check-pack
+check: check-drift validate check-copy check-skill check-facts check-logo test check-pack
 	@echo "make check: all checks passed"
 
 check-drift: tools/node_modules/ajv/package.json
@@ -36,6 +36,9 @@ check-copy:
 
 check-skill:
 	node scripts/check.js skill
+
+check-facts:
+	node scripts/check.js facts
 
 check-logo:
 	node scripts/check.js logo

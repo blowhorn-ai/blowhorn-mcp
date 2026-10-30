@@ -216,7 +216,7 @@ they drift.
 ```bash
 make install   # dev tooling into tools/node_modules
 make generate  # rewrite the generated files
-make check     # what CI runs: drift, schemas, copy rules, skill, logo, tests, tarball
+make check     # what CI runs: drift, schemas, copy rules, skill, docs facts, logo, tests, tarball
 ```
 
 `npm test` runs the same tests as `make test`; `npm run check` runs

@@ -155,7 +155,7 @@ function write(outDir, root = ROOT) {
   return Object.keys(files);
 }
 
-module.exports = { outputs, render, write, repoUrl, serialize, ROOT };
+module.exports = { outputs, render, write, readSources, repoUrl, serialize, ROOT };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

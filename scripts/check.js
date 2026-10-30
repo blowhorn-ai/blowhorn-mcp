@@ -7,7 +7,8 @@
  *   drift  every generated file equals what scripts/generate.js writes now
  *   copy   the copy rules hold in every tracked text file
  *   skill  every skills/<name>/SKILL.md has valid frontmatter
- *   logo   assets/blowhorn-logo-400.png is a 400x400 PNG
+ *   facts  the docs name Blowhorn <minimumAppVersion> and carry listing.json's urls
+ *   logo   listing.json's logo.png is a 400x400 PNG
  *   pack   the npm tarball holds exactly the launcher's files
  *
  * The copy rules are written out below, and test/check.test.js feeds them
@@ -126,6 +127,37 @@ function skill() {
   process.stdout.write(`ok skills: ${names.join(", ")}\n`);
 }
 
+/** Files that must name `Blowhorn <minimumAppVersion>`, and files one of which must carry each URL. */
+const VERSION_DOCS = ["README.md", "llms-install.md", "skills/blowhorn/SKILL.md"];
+const URL_DOCS = ["README.md", "MAINTAINERS.md"];
+const DOC_URLS = ["setup", "privacy", "terms", "support", "download"];
+
+/**
+ * Problem strings for `listing` against the docs, read by `readDoc(file)`; [] when they agree.
+ * longDescription and urls are copy maintainers paste into marketplace forms, so they must
+ * say what the docs say.
+ */
+function factProblems(listing, readDoc) {
+  const problems = [];
+  const want = `Blowhorn ${listing.minimumAppVersion}`;
+  for (const file of VERSION_DOCS) {
+    if (!readDoc(file).includes(want)) problems.push(`  ${file}: does not mention "${want}" (minimumAppVersion in listing/listing.json)`);
+  }
+  if (!listing.longDescription.includes(want)) problems.push(`  listing/listing.json: longDescription does not mention "${want}"`);
+  const docs = URL_DOCS.map(readDoc);
+  for (const key of DOC_URLS) {
+    const url = listing.urls[key];
+    if (!docs.some((text) => text.includes(url))) problems.push(`  urls.${key} ${url}: in neither ${URL_DOCS.join(" nor ")}`);
+  }
+  return problems;
+}
+
+function facts() {
+  const problems = factProblems(generate.readSources().listing, (file) => fs.readFileSync(path.join(ROOT, file), "utf8"));
+  if (problems.length) fail(["The docs disagree with listing/listing.json:", ...problems]);
+  process.stdout.write("ok docs match listing/listing.json's minimumAppVersion and urls\n");
+}
+
 /** { width, height } from a PNG's signature and IHDR chunk, or null when `buf` is not a PNG. */
 function pngSize(buf) {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -134,7 +166,7 @@ function pngSize(buf) {
 }
 
 function logo() {
-  const file = "assets/blowhorn-logo-400.png";
+  const file = generate.readSources().listing.logo.png;
   const size = pngSize(fs.readFileSync(path.join(ROOT, file)));
   if (!size) fail(`${file}: not a PNG`);
   if (size.width !== 400 || size.height !== 400) fail(`${file}: ${size.width}x${size.height}, want 400x400`);
@@ -159,9 +191,9 @@ function pack() {
   process.stdout.write(`ok npm tarball: ${files.join(", ")}\n`);
 }
 
-const CHECKS = { drift, copy, skill, logo, pack };
+const CHECKS = { drift, copy, skill, facts, logo, pack };
 
-module.exports = { pngSize, frontmatter, RULES };
+module.exports = { pngSize, frontmatter, factProblems, RULES };
 
 if (require.main === module) {
   const names = process.argv.slice(2);
