@@ -6,8 +6,7 @@
  * schemas/vendor/SOURCES.json against its JSON Schema, and checks that each
  * vendored schema still has the sha256 SOURCES.json records for it.
  *
- *   node scripts/validate.js             validate the files in the repo
- *   node scripts/validate.js --root DIR  validate the generated files under DIR
+ *   node scripts/validate.js   validate the files in the repo
  *
  * Ajv comes from tools/node_modules (`make install`): the root package's
  * "os": ["darwin"] stops npm installing anything at the root elsewhere.
@@ -96,14 +95,9 @@ function checkVendorHashes() {
 module.exports = { SCHEMAS, validateDoc, validateFile, checkVendorHashes };
 
 if (require.main === module) {
-  const args = process.argv.slice(2);
-  const at = args.indexOf("--root");
-  const root = at === -1 ? ROOT : path.resolve(args[at + 1]);
   const errors = [];
   for (const relPath of Object.keys(SCHEMAS)) {
-    // listing.json and SOURCES.json are sources, so they are always read from the repo.
-    const base = relPath === "listing/listing.json" || relPath.startsWith("schemas/") ? ROOT : root;
-    const found = validateFile(path.join(base, relPath), relPath);
+    const found = validateFile(path.join(ROOT, relPath), relPath);
     errors.push(...found);
     if (!found.length) process.stdout.write(`ok ${relPath} (${SCHEMAS[relPath]})\n`);
   }
