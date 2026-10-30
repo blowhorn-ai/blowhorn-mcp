@@ -34,14 +34,14 @@ safely on the user's behalf.
 
 The tools are grouped the same way Blowhorn's commands are:
 
-| Group   | What it is for                                              |
-|---------|-------------------------------------------------------------|
-| Act     | Drafting and queueing posts.                                |
-| Manage  | The queue, schedule, drafts and profiles.                   |
-| Connect | Social profiles and the services Blowhorn signs in to.      |
-| Run     | Blowhorn's background service and its jobs.                 |
-| Observe | Analytics, status and diagnostics.                          |
-| Meta    | Blowhorn itself, including setup, upgrade and uninstall.    |
+| Group   | What it is for                                                   |
+|---------|------------------------------------------------------------------|
+| Act     | Posting, commenting, following and amplifying.                   |
+| Manage  | Profiles, content, schedules, risk settings and config.          |
+| Connect | Sign-ins, the Chrome extension and Slack.                        |
+| Run     | Blowhorn's background service, the desktop app and the store.    |
+| Observe | Analytics, diagnostics and reports.                              |
+| Meta    | Setup, upgrade and uninstall.                                    |
 
 Setup, upgrade and uninstall in Meta change the user's Mac. Never run them
 unless the user asked for that exact action in this conversation, and even
