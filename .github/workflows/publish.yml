@@ -1,8 +1,9 @@
-name: Publish to npm
+name: Publish to npm and the MCP Registry
 
 # Started by `make publish` after `make release` created tag v<version>.
 # Publishes with provenance through npm trusted publishing (OIDC): npm trusts
-# this workflow file in the `npm` environment, so no token is stored.
+# this workflow file in the `npm` environment, so no token is stored. Then
+# publishes server.json to the MCP Registry with GitHub OIDC.
 
 on:
   workflow_dispatch:
@@ -87,3 +88,34 @@ jobs:
       - name: Publish
         run: npm publish --provenance --access public
 
+      # Dependabot does not bump this pin, so a maintainer raises it by hand
+      # (like the npm pin above).
+      - name: Install mcp-publisher
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.7
+          MCP_PUBLISHER_SHA256: 00b21004149a4ce66f0782508ae4a2bce67d1bea395a8da0bd8028159fb59579
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/mcp-publisher.tar.gz" "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "$MCP_PUBLISHER_SHA256  $RUNNER_TEMP/mcp-publisher.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/mcp-publisher"
+          tar -xzf "$RUNNER_TEMP/mcp-publisher.tar.gz" -C "$RUNNER_TEMP/mcp-publisher" mcp-publisher
+
+      - name: server.json versions equal the input
+        run: |
+          node -e '
+            const s = require("./server.json");
+            const v = process.env.VERSION;
+            const p = s.packages && s.packages[0] && s.packages[0].version;
+            if (s.version !== v || p !== v) {
+              console.log("::error::server.json says version " + s.version + " and packages[0].version " + p + ", not " + v);
+              process.exit(1);
+            }
+          '
+
+      # The registry accepts the io.github.blowhorn-ai/* namespace from this
+      # org's OIDC token and checks npm's mcpName, which is why this runs
+      # after npm publish. Run from the repo root, which holds server.json.
+      - name: Publish to the MCP Registry
+        run: |
+          "$RUNNER_TEMP/mcp-publisher/mcp-publisher" login github-oidc
+          "$RUNNER_TEMP/mcp-publisher/mcp-publisher" publish
