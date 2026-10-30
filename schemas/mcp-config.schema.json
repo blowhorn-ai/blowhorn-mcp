@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/schemas/mcp-config.schema.json",
   "title": "Plugin MCP server config (.mcp.json, mcp.json)",
-  "description": "The mcpServers file a Claude Code plugin (.mcp.json) or a Cursor plugin (mcp.json) reads from its root. Ours, because schemas/vendor/agent-plugins-mcp.schema.json requires a $schema member and \"type\": \"stdio\" that neither client's documented form carries.",
+  "description": "The mcpServers file a Claude Code plugin (.mcp.json) or a Cursor plugin (mcp.json) reads from its root. Ours, because the agent-plugins.org MCP schema (https://agent-plugins.org/schemas/1.0.0/mcp.schema.json) requires a $schema member and \"type\": \"stdio\", which neither client's documented form carries, so it is not vendored here.",
   "type": "object",
   "properties": {
     "mcpServers": {

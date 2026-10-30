@@ -2,11 +2,6 @@
   "$schema": "../sources.schema.json",
   "files": [
     {
-      "file": "agent-plugins-mcp.schema.json",
-      "url": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-      "sha256": "6539175bfcdf43085855183e86da40ea94b166547a72b47ae9a0a390516d3acb"
-    },
-    {
       "file": "claude-code-marketplace.schema.json",
       "url": "https://json.schemastore.org/claude-code-marketplace.json",
       "sha256": "42c3f80413638e93a420256d942f409104b651379b9ac2451cc636f581de2ffc"
