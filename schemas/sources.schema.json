@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/schemas/sources.schema.json",
+  "title": "Vendored schema sources (schemas/vendor/SOURCES.json)",
+  "description": "Where each file in schemas/vendor/ came from and the sha256 of its exact bytes. make schemas-refresh rewrites it.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": { "description": "File name inside schemas/vendor/.", "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*\\.json$" },
+          "url": { "description": "Upstream URL the file is downloaded from, byte for byte.", "type": "string", "format": "uri", "pattern": "^https://" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "required": ["file", "url", "sha256"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["files"],
+  "additionalProperties": false
+}

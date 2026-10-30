@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "blowhorn",
+  "owner": {
+    "name": "Blowhorn",
+    "url": "https://blowhorn.ai/"
+  },
+  "metadata": {
+    "description": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "blowhorn",
+      "source": "./",
+      "description": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Blowhorn",
+        "url": "https://blowhorn.ai/"
+      },
+      "homepage": "https://blowhorn.ai/docs/reference/mcp-server/",
+      "repository": "https://github.com/blowhorn-ai/blowhorn-mcp",
+      "license": "AGPL-3.0-only",
+      "keywords": [
+        "blowhorn",
+        "mcp",
+        "model-context-protocol",
+        "social-media",
+        "scheduling",
+        "agent",
+        "macos"
+      ]
+    }
+  ]
+}

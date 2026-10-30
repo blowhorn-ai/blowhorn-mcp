@@ -1,0 +1,89 @@
+name: Publish to npm
+
+# Started by `make publish` after `make release` created tag v<version>.
+# Publishes with provenance through npm trusted publishing (OIDC): npm trusts
+# this workflow file in the `npm` environment, so no token is stored.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, plain X.Y.Z without the v (the tag v<version> must exist)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      # A dispatch runs the workflow file from the branch it names, so refuse
+      # anything but master outright rather than skip quietly. The `npm`
+      # environment's deployment branch rule enforces the same thing.
+      - name: Require master
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != refs/heads/master ]; then
+            echo "::error::publish runs only from master, not $REF; dispatch it with --ref master"
+            exit 1
+          fi
+
+      # Plain X.Y.Z only: a prerelease published here would become `latest`.
+      - name: Check the version input
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version '$VERSION' is not plain X.Y.Z (no leading v, no prerelease)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: refs/tags/v${{ env.VERSION }}
+          # Full history and every branch, so the next steps can see origin/master.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Tag v${{ env.VERSION }} is on master
+        run: |
+          git rev-parse -q --verify refs/remotes/origin/master >/dev/null || { echo "::error::origin/master was not fetched"; exit 1; }
+          git merge-base --is-ancestor "refs/tags/v$VERSION^{commit}" refs/remotes/origin/master || { echo "::error::tag v$VERSION is not on origin/master; release only from master"; exit 1; }
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer. Pinned exactly, and
+      # Dependabot does not bump this pin, so a maintainer does by hand.
+      - name: Use npm 11.21.1 (trusted publishing)
+        run: |
+          npm install --global npm@11.21.1
+          npm --version
+
+      - name: package.json version equals the input
+        run: |
+          actual=$(node -p "require('./package.json').version")
+          test "$actual" = "$VERSION" || { echo "::error::package.json says $actual, not $VERSION"; exit 1; }
+
+      # make install runs npm ci with --ignore-scripts, so no dependency's
+      # lifecycle script runs in this job.
+      - run: make install
+      - run: make check
+
+      # npm publish fails by itself on a version already on npm.
+      - name: Publish
+        run: npm publish --provenance --access public
+

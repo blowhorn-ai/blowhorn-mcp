@@ -1,0 +1,39 @@
+{
+  "name": "blowhorn-mcp",
+  "version": "0.1.0",
+  "description": "Starts the Blowhorn MCP server from the Blowhorn app on this Mac, over stdio: every Blowhorn command as a tool, dry run first.",
+  "keywords": [
+    "blowhorn",
+    "mcp",
+    "model-context-protocol",
+    "agent",
+    "ai"
+  ],
+  "homepage": "https://blowhorn.ai/docs/reference/mcp-server/",
+  "bugs": "https://github.com/blowhorn-ai/blowhorn-mcp/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blowhorn-ai/blowhorn-mcp.git"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "Layer5",
+  "mcpName": "io.github.blowhorn-ai/blowhorn",
+  "type": "commonjs",
+  "bin": {
+    "blowhorn-mcp": "bin/blowhorn-mcp.js"
+  },
+  "files": [
+    "bin/",
+    "lib/launcher-common.js"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "make check"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "blowhorn": {
+      "command": "${HOME}/.local/bin/blowhorn-mcp"
+    }
+  }
+}

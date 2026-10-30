@@ -1,0 +1,25 @@
+{
+  "$schema": "../sources.schema.json",
+  "files": [
+    {
+      "file": "claude-code-marketplace.schema.json",
+      "url": "https://json.schemastore.org/claude-code-marketplace.json",
+      "sha256": "42c3f80413638e93a420256d942f409104b651379b9ac2451cc636f581de2ffc"
+    },
+    {
+      "file": "claude-code-plugin-manifest.schema.json",
+      "url": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+      "sha256": "b86168a7ad264150c713476e2693fa2399ad90e4f7ec29ee038644c2c950e799"
+    },
+    {
+      "file": "glama-server.schema.json",
+      "url": "https://glama.ai/mcp/schemas/server.json",
+      "sha256": "7f652273293b658bcf9156646745c3aa9c42edcbd179ee126361e462814f1508"
+    },
+    {
+      "file": "mcp-server.schema.json",
+      "url": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+      "sha256": "3fba09590c99f61735d234822279f4223fab9e300c0a81e81c91ab62a4114de0"
+    }
+  ]
+}
