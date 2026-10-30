@@ -84,8 +84,31 @@ jobs:
       - run: make install
       - run: make check
 
-      # npm publish fails by itself on a version already on npm.
+      # Lets a rerun for a version already on npm go straight to the MCP
+      # Registry step, so a failed registry publish can be retried. 200 means
+      # published, 404 means not; anything else fails the step.
+      - name: Check whether npm has the version
+        id: npm_state
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/blowhorn-mcp/$VERSION") || { echo "::error::could not reach the npm registry"; exit 1; }
+          case "$code" in
+            200)
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::npm already has blowhorn-mcp $VERSION; skipping npm publish and publishing only to the MCP Registry"
+              ;;
+            404)
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::npm registry answered HTTP $code for blowhorn-mcp $VERSION, expected 200 or 404"
+              exit 1
+              ;;
+          esac
+
+      # Skipped when npm already has the version (see the check above), since
+      # npm publish would fail on it.
       - name: Publish
+        if: steps.npm_state.outputs.published != 'true'
         run: npm publish --provenance --access public
 
       # Dependabot does not bump this pin, so a maintainer raises it by hand
@@ -111,6 +134,23 @@ jobs:
               process.exit(1);
             }
           '
+
+      # The registry looks the package up on npm, and a version just published
+      # can take a moment to be served (the first run got a 400 "version not
+      # found" one second after npm publish). Poll every 15 seconds for up to
+      # 10 minutes until npm answers 200.
+      - name: Wait for npm to serve v${{ env.VERSION }}
+        run: |
+          for i in $(seq 1 40); do
+            if curl -fsS "https://registry.npmjs.org/blowhorn-mcp/$VERSION" >/dev/null; then
+              echo "npm serves blowhorn-mcp $VERSION"
+              exit 0
+            fi
+            echo "npm does not serve blowhorn-mcp $VERSION yet (attempt $i of 40)"
+            sleep 15
+          done
+          echo "::error::npm did not serve blowhorn-mcp $VERSION within 10 minutes"
+          exit 1
 
       # The registry accepts the io.github.blowhorn-ai/* namespace from this
       # org's OIDC token and checks npm's mcpName, which is why this runs

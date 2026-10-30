@@ -8,6 +8,9 @@ launcher's, which every listing file follows.
 - The publish workflow now also publishes `server.json` to the MCP Registry
   with GitHub OIDC (`mcp-publisher`, pinned and checksum-verified), right
   after the npm publish.
+- The workflow waits for npm to serve the new version before the registry
+  publish, and a rerun for a version already on npm publishes only to the
+  registry.
 - First version published through npm trusted publishing, with provenance.
 
 ## 0.1.0
