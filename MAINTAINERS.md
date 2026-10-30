@@ -100,8 +100,8 @@ can publish.
    workflow (11.5.1 or newer, needed for trusted publishing), checks that
    `package.json` says `X.Y.Z`, runs `make install`
    (with lifecycle scripts disabled) and `make check`, and publishes with
-   `npm publish --provenance --access public`, which itself fails on a
-   version already on npm. It then also publishes `server.json` to the MCP
+   `npm publish --provenance --access public`, skipped when the version is
+   already on npm. It then also publishes `server.json` to the MCP
    Registry (see below).
 
 ## MCP Registry
@@ -117,8 +117,16 @@ The registry checks that the npm package's `mcpName` (in `package.json`)
 equals `server.json`'s `name`, `io.github.blowhorn-ai/blowhorn`, which is why
 the npm publish comes first.
 
-If the workflow's registry step fails after npm succeeded, an owner of the
-`blowhorn-ai` GitHub org publishes by hand from the repo root:
+The workflow waits for npm to serve the new version (up to 10 minutes)
+before the registry publish, since the registry rejects a version npm does
+not serve yet.
+
+If the workflow's registry step fails after npm succeeded, run `make publish`
+again for the same version. The workflow sees the version already on npm,
+skips the npm publish and publishes only to the MCP Registry.
+
+As a last resort, an owner of the `blowhorn-ai` GitHub org publishes by hand
+from the repo root:
 
 ```bash
 mcp-publisher login github
