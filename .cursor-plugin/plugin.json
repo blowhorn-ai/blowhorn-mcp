@@ -17,5 +17,6 @@
     "agent",
     "macos"
   ],
-  "logo": "assets/blowhorn-logo.svg"
+  "logo": "assets/blowhorn-logo.svg",
+  "mcpServers": "./mcp.json"
 }

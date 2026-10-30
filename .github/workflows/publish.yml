@@ -66,9 +66,11 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Use npm 11.5.1 or newer (trusted publishing)
+      # Trusted publishing needs npm 11.5.1 or newer. Pinned exactly, and
+      # Dependabot does not bump this pin, so a maintainer does by hand.
+      - name: Use npm 11.21.1 (trusted publishing)
         run: |
-          npm install --global npm@^11.5.1
+          npm install --global npm@11.21.1
           npm --version
 
       - name: package.json version equals the input

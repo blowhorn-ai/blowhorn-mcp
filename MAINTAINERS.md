@@ -95,8 +95,9 @@ can publish.
    `gh workflow run publish.yml --ref master -f version=X.Y.Z --repo blowhorn-ai/blowhorn-mcp`.
    The workflow fails unless it runs from `master` and the version is plain
    `X.Y.Z`. It checks out tag `vX.Y.Z` (and fails if it is missing or is not
-   an ancestor of `origin/master`), installs npm 11.5.1 or newer for trusted
-   publishing, checks that `package.json` says `X.Y.Z`, runs `make install`
+   an ancestor of `origin/master`), installs the npm version pinned in the
+   workflow (11.5.1 or newer, needed for trusted publishing), checks that
+   `package.json` says `X.Y.Z`, runs `make install`
    (with lifecycle scripts disabled) and `make check`, and publishes with
    `npm publish --provenance --access public`, which itself fails on a
    version already on npm.
@@ -134,4 +135,14 @@ downloads them again and rewrites `SOURCES.json`; review the diff and run
 
 Third-party actions are pinned to full commit SHAs with the version in a
 comment: `actions/checkout` v4.2.2 and `actions/setup-node` v4.4.0.
-Dependabot proposes updates weekly.
+Dependabot proposes updates weekly. It does not bump the npm version
+the publish workflow installs (`npm install --global npm@X.Y.Z`), so a
+maintainer raises that pin by hand.
+
+## Contributors
+
+This repo's root is the Claude Code plugin root, so Claude Code opened in
+this repo offers a project `blowhorn` MCP server from `.mcp.json`. Decline
+it unless you are on a Mac with Blowhorn 1.61.0 or later installed; anywhere
+else `~/.local/bin/blowhorn-mcp` does not exist and the server fails to
+start.

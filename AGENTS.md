@@ -23,3 +23,7 @@ Notes for coding agents working in this repo.
   `make schemas-refresh`.
 - **Tests** run behavior (execute scripts and the launcher, parse output);
   never grep source code.
+- **Project MCP server**: the repo root is the Claude Code plugin root, so
+  Claude Code in this repo offers a project `blowhorn` MCP server from
+  `.mcp.json`. Decline it unless you are on a Mac with Blowhorn 1.61.0 or
+  later installed.

@@ -92,6 +92,8 @@ function outputs(listing, pkg) {
     },
 
     // Cursor plugin. Cursor interpolates ${userHome} in mcp.json; it does not expand ${HOME}.
+    // The manifest names mcp.json explicitly, so Cursor never falls back to
+    // .mcp.json, the Claude Code plugin's ${HOME} config at the same root.
     ".cursor-plugin/plugin.json": {
       name: listing.slug,
       description: listing.shortDescription,
@@ -102,6 +104,7 @@ function outputs(listing, pkg) {
       license,
       keywords: listing.keywords,
       logo: listing.logo.svg,
+      mcpServers: "./mcp.json",
     },
     "mcp.json": {
       mcpServers: { [listing.slug]: listing.commands.cursorPlugin },

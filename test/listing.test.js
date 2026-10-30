@@ -88,6 +88,16 @@ test("Cursor plugin: mcp.json uses ${userHome}, which Cursor interpolates, and n
   assert.ok(!command.includes("${HOME}"), command);
 });
 
+test("Cursor plugin: the manifest points at the ${userHome} mcp.json, never at .mcp.json", () => {
+  const ref = read(".cursor-plugin/plugin.json").mcpServers;
+  assert.strictEqual(typeof ref, "string");
+  const file = path.posix.normalize(ref);
+  assert.strictEqual(file, "mcp.json");
+  assert.notStrictEqual(file, ".mcp.json");
+  const { command } = read(file).mcpServers.blowhorn;
+  assert.ok(command.includes("${userHome}"), command);
+});
+
 test("Gemini extension: node runs this repo's launcher once ${extensionPath} and ${/} are substituted", () => {
   const server = read("gemini-extension.json").mcpServers.blowhorn;
   assert.strictEqual(server.command, "node");
