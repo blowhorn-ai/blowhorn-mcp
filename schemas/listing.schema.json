@@ -13,10 +13,9 @@
     "longDescription": { "description": "Copy maintainers paste into marketplace forms that take a longer description; no generated file carries it. scripts/check.js requires it to name Blowhorn <minimumAppVersion>.", "type": "string", "minLength": 1, "maxLength": 2000 },
     "keywords": { "type": "array", "items": { "$ref": "#/$defs/kebab" }, "minItems": 1, "uniqueItems": true },
     "urls": {
-      "description": "Links maintainers paste into marketplace forms. docs is the generated manifests' homepage; scripts/check.js requires setup, privacy, terms, support and download to appear in README.md or MAINTAINERS.md.",
+      "description": "Links maintainers paste into marketplace forms. docs is the generated manifests' homepage and must equal package.json's homepage; scripts/check.js requires setup, privacy, terms, support and download to appear in README.md or MAINTAINERS.md.",
       "type": "object",
       "properties": {
-        "homepage": { "$ref": "#/$defs/httpsUrl" },
         "docs": { "$ref": "#/$defs/httpsUrl" },
         "setup": { "$ref": "#/$defs/httpsUrl" },
         "privacy": { "$ref": "#/$defs/httpsUrl" },
@@ -24,7 +23,7 @@
         "support": { "$ref": "#/$defs/httpsUrl" },
         "download": { "$ref": "#/$defs/httpsUrl" }
       },
-      "required": ["homepage", "docs", "setup", "privacy", "terms", "support", "download"],
+      "required": ["docs", "setup", "privacy", "terms", "support", "download"],
       "additionalProperties": false
     },
     "logo": {

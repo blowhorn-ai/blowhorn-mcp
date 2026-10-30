@@ -14,6 +14,10 @@ Blowhorn desktop app's version: the launcher works with any Blowhorn 1.61.0
 or later, and every MCP Registry publish pairs with an npm publish of the
 same version.
 
+Versions are plain `X.Y.Z`, never a prerelease, so a publish can never make
+a prerelease npm's `latest`. `make check`, `make release`, `make publish`
+and the publish workflow all refuse any other version.
+
 A release is three things with that version:
 
 1. A git tag `vX.Y.Z` and its GitHub release. The Gemini CLI extensions
@@ -39,14 +43,13 @@ git checkout v0.1.0          # a clean checkout of the release tag (make release
 make install
 make check
 npm login
-npm publish --access public --provenance=false
+npm publish --access public
 ```
 
-That is `npm publish --access public` plus `--provenance=false`:
-`publishConfig.provenance` is set in `package.json`, and npm refuses to make
-a provenance statement outside a supported CI run, so without the flag this
-one manual publish fails. Every later version is published by the workflow,
-with provenance.
+That one manual publish has no provenance, since npm makes a provenance
+statement only from a supported CI run. `package.json` sets no
+`publishConfig`; the workflow passes `--provenance --access public` itself,
+so every later version is published by the workflow, with provenance.
 
 ### b. Add the trusted publisher
 
@@ -90,11 +93,13 @@ can publish.
    release with `gh`.
 5. `make publish`. It runs
    `gh workflow run publish.yml --ref master -f version=X.Y.Z --repo blowhorn-ai/blowhorn-mcp`.
-   The workflow fails unless it runs from `master`, checks out tag `vX.Y.Z`
-   (and fails if it is missing or is not an ancestor of `origin/master`),
-   checks that `package.json` says `X.Y.Z`, runs `make check`, refuses a version
-   already on npm, publishes with `npm publish --provenance --access public`
-   and confirms the version with `npm view`.
+   The workflow fails unless it runs from `master` and the version is plain
+   `X.Y.Z`. It checks out tag `vX.Y.Z` (and fails if it is missing or is not
+   an ancestor of `origin/master`), installs npm 11.5.1 or newer for trusted
+   publishing, checks that `package.json` says `X.Y.Z`, runs `make install`
+   (with lifecycle scripts disabled) and `make check`, and publishes with
+   `npm publish --provenance --access public`, which itself fails on a
+   version already on npm.
 
 ## MCP Registry (separate, by hand, not automated here)
 

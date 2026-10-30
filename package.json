@@ -32,10 +32,6 @@
   "os": [
     "darwin"
   ],
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "scripts": {
     "test": "node --test test/*.test.js",
     "check": "make check"

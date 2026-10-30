@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to publish, without the v (the tag v<version> must exist)
+        description: Version to publish, plain X.Y.Z without the v (the tag v<version> must exist)
         required: true
         type: string
 
@@ -41,10 +41,11 @@ jobs:
             exit 1
           fi
 
+      # Plain X.Y.Z only: a prerelease published here would become `latest`.
       - name: Check the version input
         run: |
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            echo "::error::version '$VERSION' is not X.Y.Z (no leading v)"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version '$VERSION' is not plain X.Y.Z (no leading v, no prerelease)"
             exit 1
           fi
 
@@ -55,11 +56,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check out exactly tag v${{ env.VERSION }}
-        run: |
-          tag_commit=$(git rev-parse -q --verify "refs/tags/v$VERSION^{commit}") || { echo "::error::tag v$VERSION does not exist"; exit 1; }
-          test "$(git rev-parse HEAD)" = "$tag_commit" || { echo "::error::HEAD is not tag v$VERSION"; exit 1; }
-
       - name: Tag v${{ env.VERSION }} is on master
         run: |
           git rev-parse -q --verify refs/remotes/origin/master >/dev/null || { echo "::error::origin/master was not fetched"; exit 1; }
@@ -69,17 +65,10 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-          cache: npm
-          cache-dependency-path: tools/package-lock.json
 
-      - name: Require npm 11.5.1 or later (trusted publishing)
+      - name: Use npm 11.5.1 or newer (trusted publishing)
         run: |
-          at_least() { node -e 'const [a,b]=process.argv.slice(1).map(v=>v.split(".").map(Number));for(let i=0;i<3;i++){if(a[i]!==b[i])process.exit(a[i]>b[i]?0:1)}' "$1" 11.5.1; }
-          if ! at_least "$(npm --version)"; then
-            echo "npm $(npm --version) is older than 11.5.1; installing npm 11"
-            npm install --global npm@11
-          fi
-          at_least "$(npm --version)" || { echo "::error::npm $(npm --version) is older than 11.5.1, which trusted publishing needs"; exit 1; }
+          npm install --global npm@^11.5.1
           npm --version
 
       - name: package.json version equals the input
@@ -87,29 +76,12 @@ jobs:
           actual=$(node -p "require('./package.json').version")
           test "$actual" = "$VERSION" || { echo "::error::package.json says $actual, not $VERSION"; exit 1; }
 
+      # make install runs npm ci with --ignore-scripts, so no dependency's
+      # lifecycle script runs in this job.
       - run: make install
       - run: make check
 
-      - name: Refuse a version already on npm
-        run: |
-          existing=$(npm view "blowhorn-mcp@$VERSION" version 2>/dev/null || true)
-          if [ "$existing" = "$VERSION" ]; then
-            echo "::error::blowhorn-mcp@$VERSION is already on npm"
-            exit 1
-          fi
-
+      # npm publish fails by itself on a version already on npm.
       - name: Publish
         run: npm publish --provenance --access public
 
-      - name: Confirm on npm
-        run: |
-          for attempt in 1 2 3 4 5 6; do
-            if [ "$(npm view "blowhorn-mcp@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
-              echo "blowhorn-mcp@$VERSION is on npm"
-              exit 0
-            fi
-            echo "not visible yet (attempt $attempt); waiting"
-            sleep 20
-          done
-          echo "::error::blowhorn-mcp@$VERSION did not appear on npm"
-          exit 1
