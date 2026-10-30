@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.blowhorn-ai/blowhorn",
+  "title": "Blowhorn",
+  "description": "Blowhorn's local MCP server on your Mac: every Blowhorn command as a tool, dry run first.",
+  "repository": {
+    "url": "https://github.com/blowhorn-ai/blowhorn-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://blowhorn.ai/docs/reference/mcp-server/",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "blowhorn-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

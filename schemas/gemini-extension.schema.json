@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/schemas/gemini-extension.schema.json",
+  "title": "Gemini CLI extension manifest (gemini-extension.json)",
+  "description": "Written from https://geminicli.com/docs/extensions/reference/; Gemini CLI publishes no JSON Schema of its own.",
+  "type": "object",
+  "properties": {
+    "name": { "description": "Lowercase letters, numbers and dashes; matches the extension's directory name.", "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$" },
+    "description": { "type": "string" },
+    "mcpServers": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/mcpServer" }
+    },
+    "contextFileName": {
+      "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "array", "items": { "type": "string", "minLength": 1 } }]
+    },
+    "excludeTools": { "type": "array", "items": { "type": "string" } },
+    "settings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "envVar": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "sensitive": { "type": "boolean" }
+        },
+        "required": ["name", "envVar"]
+      }
+    }
+  },
+  "required": ["name", "version"],
+  "$defs": {
+    "mcpServer": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "cwd": { "type": "string" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "url": { "type": "string" },
+        "httpUrl": { "type": "string" },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "timeout": { "type": "integer", "minimum": 0 },
+        "trust": { "type": "boolean" },
+        "includeTools": { "type": "array", "items": { "type": "string" } },
+        "excludeTools": { "type": "array", "items": { "type": "string" } }
+      },
+      "anyOf": [{ "required": ["command"] }, { "required": ["url"] }, { "required": ["httpUrl"] }]
+    }
+  }
+}

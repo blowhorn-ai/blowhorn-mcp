@@ -1,0 +1,11 @@
+{
+  "name": "blowhorn-mcp-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Development tooling for blowhorn-mcp: schema validation for the generated listing files. Kept apart from the root package, whose \"os\": [\"darwin\"] makes npm refuse to install anything on other platforms.",
+  "license": "AGPL-3.0-only",
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

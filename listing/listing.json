@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/listing.schema.json",
+  "slug": "blowhorn",
+  "displayName": "Blowhorn",
+  "title": "Blowhorn",
+  "registryDescription": "Blowhorn's local MCP server on your Mac: every Blowhorn command as a tool, dry run first.",
+  "shortDescription": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
+  "longDescription": "Blowhorn is an AI-native social media manager. Its MCP server ships inside the Blowhorn desktop app and runs locally on your Mac over stdio, with one tool per Blowhorn command, grouped Act, Manage, Connect, Run, Observe and Meta. Reads run as asked; every state change runs as a dry run unless the call confirms it, and Blowhorn's approval mode applies to agents too. Tool results never carry secrets and tool arguments are never logged. Requires macOS and Blowhorn 1.61.0 or later, opened once so it writes ~/.local/bin/blowhorn-mcp.",
+  "keywords": [
+    "blowhorn",
+    "mcp",
+    "model-context-protocol",
+    "social-media",
+    "scheduling",
+    "agent",
+    "macos"
+  ],
+  "urls": {
+    "homepage": "https://blowhorn.ai/",
+    "docs": "https://blowhorn.ai/docs/reference/mcp-server/",
+    "setup": "https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/",
+    "privacy": "https://blowhorn.ai/legal/privacy/",
+    "terms": "https://blowhorn.ai/legal/terms/",
+    "support": "https://blowhorn.ai/docs/reference/support/",
+    "download": "https://blowhorn.ai/download/"
+  },
+  "logo": {
+    "svg": "assets/blowhorn-logo.svg",
+    "png": "assets/blowhorn-logo-400.png"
+  },
+  "author": {
+    "name": "Blowhorn",
+    "url": "https://blowhorn.ai/"
+  },
+  "maintainers": [
+    "yi-nuo426",
+    "leecalcote"
+  ],
+  "minimumAppVersion": "1.61.0",
+  "commands": {
+    "claudePlugin": {
+      "command": "${HOME}/.local/bin/blowhorn-mcp"
+    },
+    "cursorPlugin": {
+      "command": "${userHome}/.local/bin/blowhorn-mcp"
+    },
+    "geminiExtension": {
+      "command": "node",
+      "args": [
+        "${extensionPath}${/}bin${/}blowhorn-mcp.js"
+      ]
+    }
+  }
+}

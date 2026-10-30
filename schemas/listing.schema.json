@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/schemas/listing.schema.json",
+  "title": "Blowhorn MCP listing facts",
+  "description": "listing/listing.json: the one source of truth scripts/generate.js derives every marketplace listing file from.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "slug": { "description": "Plugin and extension name in every marketplace.", "$ref": "#/$defs/kebab" },
+    "displayName": { "type": "string", "minLength": 1 },
+    "title": { "description": "MCP Registry title.", "type": "string", "minLength": 1, "maxLength": 100 },
+    "registryDescription": { "description": "MCP Registry description; the registry caps it at 100 characters.", "type": "string", "minLength": 1, "maxLength": 100 },
+    "shortDescription": { "description": "Plugin and extension manifests.", "type": "string", "minLength": 1, "maxLength": 300 },
+    "longDescription": { "description": "For listing forms that take a longer description.", "type": "string", "minLength": 1, "maxLength": 2000 },
+    "keywords": { "type": "array", "items": { "$ref": "#/$defs/kebab" }, "minItems": 1, "uniqueItems": true },
+    "urls": {
+      "type": "object",
+      "properties": {
+        "homepage": { "$ref": "#/$defs/httpsUrl" },
+        "docs": { "$ref": "#/$defs/httpsUrl" },
+        "setup": { "$ref": "#/$defs/httpsUrl" },
+        "privacy": { "$ref": "#/$defs/httpsUrl" },
+        "terms": { "$ref": "#/$defs/httpsUrl" },
+        "support": { "$ref": "#/$defs/httpsUrl" },
+        "download": { "$ref": "#/$defs/httpsUrl" }
+      },
+      "required": ["homepage", "docs", "setup", "privacy", "terms", "support", "download"],
+      "additionalProperties": false
+    },
+    "logo": {
+      "type": "object",
+      "properties": {
+        "svg": { "$ref": "#/$defs/relativePath", "type": "string", "pattern": "\\.svg$" },
+        "png": { "$ref": "#/$defs/relativePath", "type": "string", "pattern": "\\.png$" }
+      },
+      "required": ["svg", "png"],
+      "additionalProperties": false
+    },
+    "author": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "url": { "$ref": "#/$defs/httpsUrl" }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "maintainers": {
+      "description": "GitHub usernames.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "minimumAppVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "commands": {
+      "description": "How each client starts the server, in that client's own variable syntax.",
+      "type": "object",
+      "properties": {
+        "claudePlugin": { "$ref": "#/$defs/command" },
+        "cursorPlugin": { "$ref": "#/$defs/command" },
+        "geminiExtension": { "$ref": "#/$defs/command" }
+      },
+      "required": ["claudePlugin", "cursorPlugin", "geminiExtension"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["slug", "displayName", "title", "registryDescription", "shortDescription", "longDescription", "keywords", "urls", "logo", "author", "maintainers", "minimumAppVersion", "commands"],
+  "additionalProperties": false,
+  "$defs": {
+    "kebab": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "httpsUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "relativePath": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+    "command": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "args": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["command"],
+      "additionalProperties": false
+    }
+  }
+}
