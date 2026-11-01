@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# A fixture for test/generate.test.js: an exposed operation that is not a GET.
+openapi: 3.0.0
+info:
+  title: fixture
+  version: 0.0.0
+paths:
+  /api/things:
+    post:
+      operationId: createThing
+      summary: Create a thing
+      x-mcp:
+        expose: true
+        scope: content:write
+      responses:
+        "201":
+          description: Created
