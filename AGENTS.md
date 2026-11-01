@@ -21,6 +21,14 @@ Notes for coding agents working in this repo.
   repo's blowhorn-axi launcher through a submodule. Add, never change.
 - **`schemas/vendor/`** stays byte for byte; refresh it only with
   `make schemas-refresh`.
+- **`hosted/`** is an interim read-only gateway, a Cloudflare Worker with
+  its own package, until Cloud serves `/mcp` itself
+  (blowhorn-ai/blowhorn#1509, U3); then it is retired. Its tool catalog,
+  `hosted/src/catalog.generated.json`, is written by `make hosted-generate`
+  from `hosted/schemas/vendor/`: never hand-edit it. The vendored schemas
+  stay byte for byte; refresh them only with `make hosted-schemas-refresh`.
+  Every tool must stay a GET: the generator refuses anything else. hosted/
+  is exempt from the local-only copy rules, never from the others.
 - **Tests** run behavior (execute scripts and the launcher, parse output);
   never grep source code.
 - **Project MCP server**: the repo root is the Claude Code plugin root, so

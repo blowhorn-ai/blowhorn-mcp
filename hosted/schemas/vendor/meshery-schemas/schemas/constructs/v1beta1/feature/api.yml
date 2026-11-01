@@ -1,0 +1,117 @@
+openapi: 3.0.0
+info:
+  title: Feature
+  description: >-
+    OpenAPI schema for the Features construct - the quantified entitlements
+    granted by Meshery Cloud subscription plans.
+  version: v1beta1
+  contact:
+    name: Meshery Maintainers
+    email: maintainers@meshery.io
+    url: https://meshery.io
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+security:
+  - jwt: []
+
+tags:
+  - name: Features
+    description: Operations related to features and entitlements
+
+paths:
+  /api/entitlement/features:
+    $ref: "./feature_operations.yml#/collection"
+  /api/entitlement/subscriptions/organizations/{orgId}/features:
+    $ref: "./feature_operations.yml#/organizationCollection"
+
+components:
+  responses:
+    400:
+      $ref: "../core/api.yml#/components/responses/400"
+    401:
+      $ref: "../core/api.yml#/components/responses/401"
+    404:
+      $ref: "../core/api.yml#/components/responses/404"
+    500:
+      $ref: "../core/api.yml#/components/responses/500"
+
+  parameters:
+    currentOrgId:
+      $ref: "../../v1beta2/core/api.yml#/components/parameters/currentOrgId"
+    orgId:
+      name: orgId
+      in: path
+      description: The ID of the organization
+      required: true
+      schema:
+        $ref: ../core/api.yml#/components/schemas/uuid
+    page:
+      $ref: ../core/api.yml#/components/parameters/page
+    pagesize:
+      $ref: ../core/api.yml#/components/parameters/pagesize
+
+  securitySchemes:
+    jwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Feature:
+      $ref: "./feature.yaml"
+
+    FeatureName:
+      type: string
+      x-enum-casing-exempt: true
+      enum:
+        - ComponentsInDesign
+        - RelationshipsInDesign
+        - DesignsInWorkspace
+        - WorkspacesInOrganization
+        - ImageSizeInDesign
+        - SizePerDesign
+        - BlowhornProfiles
+        - BlowhornBrowserAutomation
+        - BlowhornScheduler
+        - BlowhornDevicesPerSeat
+        - BlowhornPlatformLinkedIn
+        - BlowhornPlatformX
+        - BlowhornPlatformReddit
+        - BlowhornPlatformHackerNews
+        - BlowhornPlatformSlack
+        - BlowhornPlatformBluesky
+        - BlowhornPlatformGitHub
+        - BlowhornPlatformBlog
+      x-enumDescriptions:
+        ComponentsInDesign: Maximum number of components in a single design; 999999999999 is unlimited.
+        RelationshipsInDesign: Maximum number of relationships in a single design; 999999999999 is unlimited.
+        DesignsInWorkspace: Maximum number of designs in a single workspace; 999999999999 is unlimited.
+        WorkspacesInOrganization: Maximum number of workspaces in an organization; 999999999999 is unlimited.
+        ImageSizeInDesign: Maximum size, in bytes, of an image embedded in a design; 999999999999 is unlimited.
+        SizePerDesign: Maximum size of a single design; 999999999999 is unlimited.
+        BlowhornProfiles: Maximum number of Blowhorn posting profiles the organization may hold; 999999999999 is unlimited.
+        BlowhornBrowserAutomation: Blowhorn may publish through browser automation; granted when quantity is greater than 0.
+        BlowhornScheduler: Blowhorn may run scheduled publishes; granted when quantity is greater than 0.
+        BlowhornDevicesPerSeat: Maximum number of devices one Blowhorn seat may publish from; 999999999999 is unlimited.
+        BlowhornPlatformLinkedIn: Blowhorn may publish to LinkedIn; granted when quantity is greater than 0.
+        BlowhornPlatformX: Blowhorn may publish to X; granted when quantity is greater than 0.
+        BlowhornPlatformReddit: Blowhorn may publish to Reddit; granted when quantity is greater than 0.
+        BlowhornPlatformHackerNews: Blowhorn may publish to Hacker News; granted when quantity is greater than 0.
+        BlowhornPlatformSlack: Blowhorn may publish to Slack; granted when quantity is greater than 0.
+        BlowhornPlatformBluesky: Blowhorn may publish to Bluesky; granted when quantity is greater than 0.
+        BlowhornPlatformGitHub: Blowhorn may publish to GitHub; granted when quantity is greater than 0.
+        BlowhornPlatformBlog: Blowhorn may publish to a blog; granted when quantity is greater than 0.
+      description: >-
+        Enumeration of feature names that can be granted by a plan. A feature is
+        either a cap, where `quantity` is the maximum and 999999999999 denotes
+        unlimited, or a capability, where any `quantity` greater than 0 grants it.
+        A feature a plan does not list is not granted.
+
+    FeaturesPage:
+      type: array
+      description: List of features.
+      items:
+        $ref: "#/components/schemas/Feature"
+        x-go-type: Feature
