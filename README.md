@@ -210,13 +210,16 @@ they drift.
 | `schemas/vendor/` | Upstream schemas, byte for byte, with `SOURCES.json` | no (`make schemas-refresh`) |
 | `scripts/` | generate, validate, check and schemas-refresh | no |
 | `tools/` | Dev tooling package (Ajv), apart from the published package | no |
+| `hosted/` | An interim read-only gateway, its own package; see [hosted/README.md](hosted/README.md) | `hosted/src/catalog.generated.json` (`make hosted-generate`) |
+
+The hosted/ folder holds an interim read-only gateway; see [hosted/README.md](hosted/README.md).
 
 ## Development
 
 ```bash
-make install   # dev tooling into tools/node_modules
+make install   # dev tooling into tools/node_modules and hosted/node_modules
 make generate  # rewrite the generated files
-make check     # what CI runs: drift, schemas, copy rules, skill, docs facts, logo, tests, tarball
+make check     # what CI runs: drift, schemas, copy rules, skill, docs facts, logo, tests, tarball, hosted/
 ```
 
 `npm test` runs the same tests as `make test`; `npm run check` runs

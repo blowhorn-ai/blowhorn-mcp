@@ -3,6 +3,13 @@
 All notable changes to this repo. Versions are the `blowhorn-mcp` npm
 launcher's, which every listing file follows.
 
+## Unreleased
+
+- `hosted/`: an interim read-only gateway, a Cloudflare Worker with its own
+  package, until Cloud serves `/mcp` itself (#8). Its tools are generated
+  from vendored meshery/schemas and checked by `make check`. It is not part
+  of the npm package. See `hosted/README.md`.
+
 ## 0.1.1
 
 - The publish workflow now also publishes `server.json` to the MCP Registry
