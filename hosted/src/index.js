@@ -7,12 +7,15 @@
  * Stateless Streamable HTTP: every POST /mcp builds a fresh MCP server whose
  * tools are the generated catalog (src/catalog.generated.json), every one a
  * GET on the Cloud API. Each call forwards the caller's own Cloud API token,
- * sent as a Bearer header, and nothing is stored. There is no anonymous
- * access, no SSE stream and no session.
+ * sent as a Bearer header, and nothing is stored. Every request must carry a
+ * Bearer token; Cloud validates it on each tool call. There is no SSE stream,
+ * no session and no JSON-RPC batch.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { readRequestBody, requestBodyTooLargeMessage } from "@modelcontextprotocol/sdk/server/requestBody.js";
+import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker-provider.js";
 import { Validator } from "@cfworker/json-schema";
 import { bearerToken } from "./auth.js";
 import { TOOLS, VERSION, callCloud, cloudBase } from "./cloud.js";
@@ -64,7 +67,12 @@ function validationErrors(tool, args) {
 }
 
 function buildServer(base) {
-  const server = new Server({ name: NAME, version: VERSION }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
+  const server = new Server({ name: NAME, version: VERSION }, {
+    capabilities: { tools: {} },
+    instructions: INSTRUCTIONS,
+    // The SDK's default, Ajv, compiles with new Function, which Workers forbid.
+    jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
+  });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [...TOOLS.values()].map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations })),
   }));
@@ -101,18 +109,33 @@ async function mcp(request, env, origin) {
   }
   if (request.method !== "POST") return rpcError(405, -32000, "Method not allowed: this stateless gateway answers POST only.", { Allow: "POST", ...cors });
 
-  const token = bearerToken(request.headers.get("Authorization"));
+  const header = request.headers.get("Authorization");
+  const token = bearerToken(header);
   if (!token) {
+    // RFC 6750 3.1: no error code when the request carried no credentials at all.
+    const challenge = header === null ? 'Bearer realm="blowhorn-mcp"' : 'Bearer realm="blowhorn-mcp", error="invalid_token"';
     return rpcError(
       401,
       -32001,
       "Unauthorized: send your own Blowhorn Cloud API token as an Authorization: Bearer <token> header.",
-      { "WWW-Authenticate": 'Bearer realm="blowhorn-mcp", error="invalid_token"', ...cors },
+      { "WWW-Authenticate": challenge, ...cors },
     );
   }
 
   const base = cloudBase(env);
   if (!base) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", cors);
+
+  // Parsed here, not by the SDK, so a JSON-RPC batch (an array) is refused before
+  // it can fan out into many Cloud calls at once.
+  let parsedBody;
+  try {
+    const body = await readRequestBody(request, MAX_REQUEST_BYTES);
+    if (body.tooLarge) return rpcError(413, -32000, requestBodyTooLargeMessage(MAX_REQUEST_BYTES), cors);
+    parsedBody = JSON.parse(body.text);
+  } catch {
+    return rpcError(400, -32700, "Parse error: Invalid JSON", cors);
+  }
+  if (Array.isArray(parsedBody)) return rpcError(400, -32600, "Invalid Request: JSON-RPC batches are not supported; send one message per POST.", cors);
 
   const server = buildServer(base);
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -122,7 +145,7 @@ async function mcp(request, env, origin) {
   });
   await server.connect(transport);
   try {
-    const res = await transport.handleRequest(request, { authInfo: { token, clientId: "bearer", scopes: [] } });
+    const res = await transport.handleRequest(request, { parsedBody, authInfo: { token, clientId: "bearer", scopes: [] } });
     const headers = new Headers(res.headers);
     for (const [k, v] of Object.entries(cors)) headers.set(k, v);
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers });

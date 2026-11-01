@@ -14,10 +14,14 @@
     "CLOUD_API_BASE": "https://cloud.blowhorn.ai",
     "ALLOWED_ORIGINS": ""
   },
-  // Logs carry only what src/index.js logs: method, tool name, status and
-  // duration. Request headers are never logged.
+  // Invocation logs (Cloudflare's per-request metadata) are off, so Workers
+  // Logs holds only the explicit console lines from src/index.js: method,
+  // tool name, status and duration.
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
+    "head_sampling_rate": 1,
+    "logs": {
+      "invocation_logs": false
+    }
   }
 }

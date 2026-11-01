@@ -69,3 +69,35 @@ test("the generator refuses an unresolvable $ref", () => {
   assert.strictEqual(status, 1);
   assert.match(stderr, /unresolvable \$ref/);
 });
+
+test("the vendor check fails on a file SOURCES.json does not list, and on an edited one", async () => {
+  const { VENDOR, vendorProblems } = await import("../scripts/catalog.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "blowhorn-vendor-"));
+  try {
+    fs.cpSync(VENDOR, dir, { recursive: true });
+    assert.deepStrictEqual(vendorProblems(dir), []);
+    const root = path.join(dir, "meshery-schemas", "schemas");
+    fs.writeFileSync(path.join(root, "extra.yaml"), "type: string\n");
+    const edited = path.join(root, "extensions", "mcp-operation.yaml");
+    fs.appendFileSync(edited, "\n");
+    const problems = vendorProblems(dir).join("\n");
+    assert.match(problems, /schemas\/extra\.yaml: not listed in SOURCES\.json/);
+    assert.match(problems, /schemas\/extensions\/mcp-operation\.yaml: sha256/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("source bounds are kept and missing ones get the defaults", () => {
+  const props = (name) => JSON.parse(generateTo().text).tools.find((t) => t.name === name).inputSchema.properties;
+  const connections = props("getConnections");
+  assert.strictEqual(connections.search.maxLength, 500);
+  assert.strictEqual(connections.kind.maxItems, 50);
+  assert.strictEqual(connections.kind.items.maxLength, 255);
+  assert.strictEqual(connections.status.items.maxLength, undefined, "an enum needs no maxLength");
+  assert.strictEqual(connections.orgId.maxLength, undefined, "a format needs no maxLength");
+  const events = props("getEvents");
+  assert.strictEqual(events.search.maxLength, 1000);
+  assert.strictEqual(events.pagesize.maximum, 1000000);
+  assert.strictEqual(events.organizationId.maxLength, 36);
+});

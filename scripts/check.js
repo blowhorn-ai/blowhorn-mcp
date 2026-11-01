@@ -66,14 +66,14 @@ const RULES = [
 
 /**
  * hosted/ is the one place that describes the interim gateway, a Cloud
- * service, so it is exempt from the rules that say the MCP server is local
- * only. Every other rule still holds there.
+ * service, so it is exempt from the rules that forbid naming Cloud, a hosted
+ * server and OAuth. Every other rule still holds there, macOS only included:
+ * hosted/ docs may not claim the local server runs on Windows or Linux.
  */
 const LOCAL_ONLY_RULES = [
   "no cloud.blowhorn.ai: the server runs locally",
   "no hosted or remote server claims",
   "no OAuth claims",
-  "no Windows or Linux support claims: macOS only",
 ];
 
 /** The RULES `file` is held to. */

@@ -122,7 +122,9 @@ test("/mcp without a valid bearer token is 401 with WWW-Authenticate, initialize
     for (const method of ["initialize", "tools/list"]) {
       const { res, text } = await call(rpc(method, method === "initialize" ? INIT : {}, headers));
       assert.strictEqual(res.status, 401, `${method} ${JSON.stringify(headers).slice(0, 40)}`);
-      assert.strictEqual(res.headers.get("WWW-Authenticate"), 'Bearer realm="blowhorn-mcp", error="invalid_token"');
+      // RFC 6750 3.1: no error code when no credentials were sent at all.
+      const challenge = headers.Authorization === undefined ? 'Bearer realm="blowhorn-mcp"' : 'Bearer realm="blowhorn-mcp", error="invalid_token"';
+      assert.strictEqual(res.headers.get("WWW-Authenticate"), challenge);
       const body = JSON.parse(text);
       assert.strictEqual(body.jsonrpc, "2.0");
       assert.match(body.error.message, /Cloud API token/);
@@ -159,9 +161,14 @@ test("OPTIONS /mcp is 204 only for an allowed origin", async () => {
   assert.strictEqual((await call(new Request(MCP, { method: "OPTIONS" }))).res.status, 403);
 });
 
-test("a CLOUD_API_BASE that is not https is refused", async () => {
-  const { res } = await call(rpc("initialize", INIT, auth), { CLOUD_API_BASE: "http://cloud.blowhorn.ai" });
-  assert.strictEqual(res.status, 500);
+test("a CLOUD_API_BASE other than https://cloud.blowhorn.ai is refused on /mcp and /healthz", async (t) => {
+  const calls = mockCloud(t, () => assert.fail("Cloud was called"));
+  for (const CLOUD_API_BASE of ["http://cloud.blowhorn.ai", "https://evil.example.test", "https://cloud.blowhorn.ai.evil.example.test", "https://cloud.blowhorn.ai/api", "https://cloud.blowhorn.ai:8443"]) {
+    assert.strictEqual((await call(rpc("initialize", INIT, auth), { CLOUD_API_BASE })).res.status, 500, CLOUD_API_BASE);
+    assert.strictEqual((await call(new Request("https://mcp.blowhorn.ai/healthz"), { CLOUD_API_BASE })).res.status, 500, CLOUD_API_BASE);
+  }
+  assert.strictEqual((await call(rpc("initialize", INIT, auth), { CLOUD_API_BASE: "https://cloud.blowhorn.ai/" })).res.status, 200);
+  assert.strictEqual(calls.length, 0);
 });
 
 test("the SDK client initializes and lists exactly the catalog tools, all read-only", async (t) => {
@@ -332,6 +339,153 @@ test("dispatch refuses any method but GET, a non-catalog path and another host",
   assert.strictEqual(calls.length, 0);
   await dispatch({ method: "GET", url: `${base}/api/content-items?page=1`, headers }, { base });
   assert.strictEqual(calls.length, 1);
+});
+
+function post(body, headers = auth) {
+  return new Request(MCP, { method: "POST", headers: { "Content-Type": "application/json", Accept: ACCEPT, ...headers }, body });
+}
+
+test("a JSON-RPC batch is 400 with a JSON-RPC error, and Cloud is never called", async (t) => {
+  const calls = mockCloud(t, () => jsonResponse(200, {}));
+  const one = (id) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "getEvents", arguments: {} } });
+  for (const batch of [[one(1), one(2), one(3)], [one(1)], []]) {
+    const { res, text } = await call(post(JSON.stringify(batch)));
+    assert.strictEqual(res.status, 400);
+    const body = JSON.parse(text);
+    assert.strictEqual(body.jsonrpc, "2.0");
+    assert.strictEqual(body.error.code, -32600);
+    assert.match(body.error.message, /batch/i);
+  }
+  assert.strictEqual(calls.length, 0);
+});
+
+test("a body that is not JSON is 400 with a parse error", async () => {
+  const { res, text } = await call(post("{not json"));
+  assert.strictEqual(res.status, 400);
+  assert.strictEqual(JSON.parse(text).error.code, -32700);
+});
+
+test("a body over 1 MB is 413", async (t) => {
+  const calls = mockCloud(t, () => assert.fail("Cloud was called"));
+  const big = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "getEvents", arguments: { search: "x".repeat(1024 * 1024) } } });
+  const { res, text } = await call(post(big));
+  assert.strictEqual(res.status, 413);
+  assert.strictEqual(JSON.parse(text).jsonrpc, "2.0");
+  assert.strictEqual(calls.length, 0);
+});
+
+test("a notification is 202 with no body", async () => {
+  const { res, text } = await call(post(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })));
+  assert.strictEqual(res.status, 202);
+  assert.strictEqual(text, "");
+});
+
+test("a wrong Accept is 406 and a wrong Content-Type is 415", async () => {
+  const init = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: INIT });
+  assert.strictEqual((await call(post(init, { ...auth, Accept: "application/json" }))).res.status, 406);
+  const noAccept = new Request(MCP, { method: "POST", headers: { "Content-Type": "application/json", ...auth }, body: init });
+  assert.strictEqual((await call(noAccept)).res.status, 406);
+  assert.strictEqual((await call(post(init, { ...auth, "Content-Type": "text/plain" }))).res.status, 415);
+});
+
+test("a Cloud timeout, before or during the body, is a tool error", async (t) => {
+  let mode = "fetch";
+  mockCloud(t, () => {
+    if (mode === "fetch") throw new DOMException("timed out", "TimeoutError");
+    const body = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('{"items": ['));
+        c.error(new DOMException("timed out", "TimeoutError"));
+      },
+    });
+    return new Response(body, { status: 200 });
+  });
+  const c = await client(t);
+  for (mode of ["fetch", "body"]) {
+    const result = await c.callTool({ name: "getEvents", arguments: {} });
+    assert.strictEqual(result.isError, true, mode);
+    assert.match(result.content[0].text, /did not answer within 20 seconds/, mode);
+  }
+});
+
+test("a Cloud body that breaks partway is a tool error, not a JSON-RPC error", async (t) => {
+  mockCloud(t, () => {
+    const body = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('{"items": ['));
+        c.error(new TypeError("connection reset SENTINEL-RUNTIME"));
+      },
+    });
+    return new Response(body, { status: 200 });
+  });
+  const c = await client(t);
+  const result = await c.callTool({ name: "getEvents", arguments: {} });
+  assert.strictEqual(result.isError, true);
+  assert.strictEqual(result.content[0].text, "Could not reach Cloud.");
+});
+
+test("an organizationId with CR/LF or not a UUID is a tool error, and Cloud is never called", async (t) => {
+  const calls = mockCloud(t, () => assert.fail("Cloud was called"));
+  const c = await client(t);
+  for (const organizationId of [`${ORG}\r\nX-Evil: 1`, `${ORG.slice(0, 34)}\r\n`, "not-a-uuid", `${ORG}x`]) {
+    const result = await c.callTool({ name: "getEvents", arguments: { organizationId } });
+    assert.strictEqual(result.isError, true, JSON.stringify(organizationId));
+    assert.match(result.content[0].text, /\/organizationId/);
+  }
+  assert.strictEqual(calls.length, 0);
+});
+
+test("a success body that echoes the token is scrubbed and carries no structuredContent", async (t) => {
+  mockCloud(t, () => jsonResponse(200, { note: `issued for ${TOKEN}`, id: ITEM }));
+  const c = await client(t);
+  const result = await c.callTool({ name: "getEvents", arguments: {} });
+  assert.ok(!result.isError);
+  assert.strictEqual(result.structuredContent, undefined);
+  assert.ok(!result.content[0].text.includes(TOKEN));
+  assert.deepStrictEqual(JSON.parse(result.content[0].text), { note: "issued for [redacted]", id: ITEM });
+});
+
+test("unbounded source parameters get default bounds: 50 items, 1000 characters, a maximum of 1000000", async (t) => {
+  const calls = mockCloud(t, () => assert.fail("Cloud was called"));
+  const c = await client(t);
+  const cases = [
+    ["getConnections", { kind: Array(51).fill("k") }, /\/kind/],
+    ["getEvents", { search: "x".repeat(1001) }, /\/search/],
+    ["getEvents", { page: 1e300 }, /\/page/],
+    ["listContentItems", { pageSize: 1000001 }, /\/pageSize/],
+  ];
+  for (const [name, args, where] of cases) {
+    const result = await c.callTool({ name, arguments: args });
+    assert.strictEqual(result.isError, true, name);
+    assert.match(result.content[0].text, where);
+  }
+  assert.strictEqual(calls.length, 0);
+});
+
+test("a request URL over 8192 bytes is refused before Cloud is called", async (t) => {
+  const calls = mockCloud(t, () => assert.fail("Cloud was called"));
+  const long = Array(50).fill("k".repeat(255));
+  assert.throws(() => buildRequest(TOOLS.get("getConnections"), { kind: long }, { base: "https://cloud.blowhorn.ai", token: TOKEN }), /over 8192 bytes/);
+  const c = await client(t);
+  const result = await c.callTool({ name: "getConnections", arguments: { kind: long, type: long } });
+  assert.strictEqual(result.isError, true);
+  assert.match(result.content[0].text, /over 8192 bytes/);
+  assert.strictEqual(calls.length, 0);
+});
+
+test("the gateway serves with code generation forbidden, as Workers do", async (t) => {
+  const original = globalThis.Function;
+  globalThis.Function = new Proxy(original, {
+    construct: () => assert.fail("new Function was called"),
+    apply: () => assert.fail("Function() was called"),
+  });
+  t.after(() => {
+    globalThis.Function = original;
+  });
+  mockCloud(t, () => jsonResponse(200, { events: [] }));
+  const c = await client(t);
+  assert.strictEqual((await c.listTools()).tools.length, 4);
+  assert.ok(!(await c.callTool({ name: "getEvents", arguments: { page: 1 } })).isError);
 });
 
 test("log lines carry only method, tool, status and duration", () => {

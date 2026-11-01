@@ -31,6 +31,11 @@ const METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "tr
 export const ORG_HEADER = "X-Current-Orgid";
 export const ORG_ARGUMENT = "organizationId";
 
+/** Default bounds for a parameter schema that sets none, so no argument can grow without limit. */
+export const DEFAULT_MAX_ITEMS = 50;
+export const DEFAULT_MAX_LENGTH = 1000;
+export const DEFAULT_MAXIMUM = 1000000;
+
 export const ANNOTATIONS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 export class CatalogError extends Error {}
@@ -39,10 +44,26 @@ export function readSources(vendor = VENDOR) {
   return JSON.parse(fs.readFileSync(path.join(vendor, "SOURCES.json"), "utf8"));
 }
 
-/** Problem strings for vendored files whose bytes differ from SOURCES.json's sha256; [] when all match. */
+/** Every file under `dir`, as forward-slash paths relative to it. */
+function walk(dir, rel = "") {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const name = rel ? `${rel}/${e.name}` : e.name;
+    return e.isDirectory() ? walk(path.join(dir, e.name), name) : [name];
+  });
+}
+
+/**
+ * Problem strings for vendored files whose bytes differ from SOURCES.json's
+ * sha256, or that SOURCES.json does not list; [] when all match.
+ */
 export function vendorProblems(vendor = VENDOR) {
   const sources = readSources(vendor);
   const problems = [];
+  const listed = new Set(sources.files.map((f) => f.path));
+  for (const file of walk(path.join(vendor, sources.dir))) {
+    if (!listed.has(file)) problems.push(`  ${file}: not listed in SOURCES.json`);
+  }
   for (const { path: file, sha256 } of sources.files) {
     const full = path.join(vendor, sources.dir, file);
     if (!fs.existsSync(full)) {
@@ -116,6 +137,20 @@ export function sortKeys(value) {
   return out;
 }
 
+/** A copy of parameter schema `s` with default bounds where it sets none: maxItems, maxLength, maximum. */
+function bounded(s) {
+  const out = { ...s };
+  if (out.type === "array") {
+    if (out.maxItems === undefined) out.maxItems = DEFAULT_MAX_ITEMS;
+    if (out.items && typeof out.items === "object") out.items = bounded(out.items);
+  } else if (out.type === "string") {
+    if (out.maxLength === undefined && out.enum === undefined && out.format === undefined && out.pattern === undefined) out.maxLength = DEFAULT_MAX_LENGTH;
+  } else if (out.type === "integer" || out.type === "number") {
+    if (out.maximum === undefined && out.exclusiveMaximum === undefined) out.maximum = DEFAULT_MAXIMUM;
+  }
+  return out;
+}
+
 function text(s) {
   return typeof s === "string" ? s.trim() : "";
 }
@@ -148,7 +183,7 @@ function tool(op, method, route, pathItem, file, load) {
     if (p.in === "header") schema.type = "string";
     if (text(p.description)) schema.description = text(p.description);
     if (p.deprecated) schema.deprecated = true;
-    properties[arg] = schema;
+    properties[arg] = bounded(schema);
     wire[arg] = { in: p.in, name: p.name };
     if (p.in === "path" || p.required) required.push(arg);
   }

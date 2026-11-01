@@ -27,6 +27,7 @@
               "maxLength": 255,
               "type": "string"
             },
+            "maxItems": 50,
             "type": "array"
           },
           "name": {
@@ -54,12 +55,14 @@
           "page": {
             "default": 0,
             "description": "Page number",
+            "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
           },
           "pageSize": {
             "default": 10,
             "description": "Number of items per page",
+            "maximum": 1000000,
             "minimum": 1,
             "type": "integer"
           },
@@ -84,6 +87,7 @@
               ],
               "type": "string"
             },
+            "maxItems": 50,
             "type": "array"
           },
           "type": {
@@ -92,6 +96,7 @@
               "maxLength": 255,
               "type": "string"
             },
+            "maxItems": 50,
             "type": "array"
           }
         },
@@ -207,10 +212,12 @@
         "properties": {
           "filter": {
             "description": "Get filtered reponses",
+            "maxLength": 1000,
             "type": "string"
           },
           "order": {
             "description": "Get ordered responses",
+            "maxLength": 1000,
             "type": "string"
           },
           "organizationId": {
@@ -222,11 +229,13 @@
           },
           "page": {
             "description": "Get responses by page",
+            "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
           },
           "pagesize": {
             "description": "Get responses by pagesize",
+            "maximum": 1000000,
             "type": "integer"
           },
           "scope": {
@@ -240,6 +249,7 @@
           },
           "search": {
             "description": "Get responses that match search param value",
+            "maxLength": 1000,
             "type": "string"
           }
         },
@@ -294,6 +304,7 @@
         "properties": {
           "order": {
             "description": "Get ordered responses",
+            "maxLength": 1000,
             "type": "string"
           },
           "organizationId": {
@@ -305,26 +316,31 @@
           },
           "page": {
             "description": "Get responses by page",
+            "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
           },
           "pageSize": {
             "description": "Number of items per page (canonical camelCase form).",
+            "maximum": 1000000,
             "minimum": 1,
             "type": "integer"
           },
           "pagesize": {
             "deprecated": true,
             "description": "Number of items per page. Deprecated alias of pageSize;\ncanonical `pageSize` wins when both are present.",
+            "maximum": 1000000,
             "minimum": 1,
             "type": "integer"
           },
           "profile": {
             "description": "Filter by owning profile subject (exact match).",
+            "maxLength": 1000,
             "type": "string"
           },
           "search": {
             "description": "Get responses that match search param value",
+            "maxLength": 1000,
             "type": "string"
           },
           "threadId": {

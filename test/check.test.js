@@ -30,13 +30,13 @@ test("copy rules catch what they forbid and pass plain copy", () => {
   }
 });
 
-test("hosted/ is exempt only from the local-only rules", () => {
+test("hosted/ is exempt only from the Cloud, hosted server and OAuth rules", () => {
   const brokenIn = (file, line) => rulesFor(file).filter(([, re]) => re.test(line)).map(([rule]) => rule);
-  for (const line of ["Try our hosted server", "Sign in with OAuth", "Calls https://cloud.blowhorn.ai", "Works on Linux"]) {
+  for (const line of ["Try our hosted server", "Sign in with OAuth", "Calls https://cloud.blowhorn.ai"]) {
     assert.ok(brokenIn("README.md", line).length, line);
     assert.deepStrictEqual(brokenIn("hosted/README.md", line), [], line);
   }
-  for (const line of [`a ${String.fromCharCode(0x2014)} b`, "Layer5 Cloud", "Ask Casey", "See pricing", "blowhorn-mcp is now available on npm", "Blowhorn is listed on Glama"]) {
+  for (const line of [`a ${String.fromCharCode(0x2014)} b`, "Layer5 Cloud", "Ask Casey", "Works on Linux", "Runs on Windows", "See pricing", "blowhorn-mcp is now available on npm", "Blowhorn is listed on Glama"]) {
     assert.ok(brokenIn("hosted/src/index.js", line).length, line);
   }
 });
