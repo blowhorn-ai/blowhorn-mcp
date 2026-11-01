@@ -57,6 +57,26 @@ claude mcp add --transport http blowhorn-cloud https://mcp.blowhorn.ai/mcp \
   --header "Authorization: Bearer $BLOWHORN_CLOUD_TOKEN"
 ```
 
+## Revoke a leaked token
+
+Revoke a token at Cloud. No sign-in is needed: the token alone is enough.
+The gateway keeps no copy, so the next tool call with that token fails.
+
+```bash
+read -rs TOKEN   # paste the token, then press Enter
+printf '{"token": "%s"}' "$TOKEN" | curl -sS -X POST https://cloud.blowhorn.ai/revoke \
+  -H 'Content-Type: application/json' --data-binary @- -w 'HTTP %{http_code}\n'
+```
+
+- `HTTP 200` means that if the token existed, it no longer works. It does
+  not confirm the token existed.
+- `400` means the body was malformed or the token was empty.
+- `HTTP 503` means nothing was revoked. Run it again.
+- Signed in? Delete the token by ID instead: list yours with
+  `GET https://cloud.blowhorn.ai/api/identity/tokens`, then send
+  `DELETE https://cloud.blowhorn.ai/api/identity/tokens?tokenId=<id>` with
+  `Authorization: Bearer <a token you still trust>`.
+
 ## Where the tools come from
 
 The catalog, `src/catalog.generated.json`, is generated from the meshery/schemas
