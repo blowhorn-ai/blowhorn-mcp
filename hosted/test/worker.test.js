@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import worker from "../src/index.js";
+import worker, * as main from "../src/index.js";
 import { TOOLS, buildRequest, dispatch } from "../src/cloud.js";
 
 const TOKEN = "fake-test-token-0123456789";
@@ -77,6 +77,11 @@ test.after(() => {
   console.log = originalLog;
   for (const text of [...bodies, ...logs]) assert.ok(!text.includes(TOKEN), "the token appeared in a response or a log line");
   assert.ok(bodies.length > 20);
+});
+
+test("the main module exports only the default handler, as Workers require", () => {
+  assert.deepStrictEqual(Object.keys(main), ["default"]);
+  assert.strictEqual(typeof main.default.fetch, "function");
 });
 
 test("GET /healthz answers without calling Cloud", async (t) => {

@@ -85,7 +85,7 @@ hosted-schemas-refresh: hosted/node_modules/@modelcontextprotocol/sdk/package.js
 ## hosted-deploy: deploy the interim gateway Worker. Run from the VM only; needs
 ## CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the environment.
 hosted-deploy: hosted-check
-	cd hosted && npx --yes wrangler@4.86.0 deploy
+	cd hosted && npx --yes wrangler@4.156.0 deploy
 
 ## release: tag $(TAG) on master and create its GitHub release. The Gemini
 ## extensions gallery reads releases, and the tag must equal gemini-extension.json's version.

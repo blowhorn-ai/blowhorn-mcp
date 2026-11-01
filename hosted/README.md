@@ -85,8 +85,10 @@ From the VM only, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
 the environment:
 
 ```bash
-make hosted-deploy   # hosted-check, then npx wrangler@4.86.0 deploy
+make hosted-deploy   # hosted-check, then npx wrangler@4.156.0 deploy
 ```
+
+wrangler 4.156 needs Node 22 or later.
 
 `wrangler.jsonc` has no routes; the `mcp.blowhorn.ai` custom domain is
 attached through the Cloudflare API. `workers_dev` and preview URLs are off.

@@ -17,7 +17,8 @@ import { Validator } from "@cfworker/json-schema";
 import { bearerToken } from "./auth.js";
 import { TOOLS, VERSION, callCloud, cloudBase } from "./cloud.js";
 
-export const NAME = "blowhorn-mcp-hosted";
+// Module-private: Workers treat every named export of the main module as an entrypoint.
+const NAME = "blowhorn-mcp-hosted";
 const MAX_REQUEST_BYTES = 1024 * 1024;
 
 const INSTRUCTIONS =
