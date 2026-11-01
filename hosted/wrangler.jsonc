@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// blowhorn-mcp-hosted: the interim read-only MCP gateway (see README.md).
+// Deployed with `make hosted-deploy` from the VM only. No routes block: the
+// mcp.blowhorn.ai custom domain is attached through the Cloudflare API.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "blowhorn-mcp-hosted",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "CLOUD_API_BASE": "https://cloud.blowhorn.ai",
+    "ALLOWED_ORIGINS": ""
+  },
+  // Logs carry only what src/index.js logs: method, tool name, status and
+  // duration. Request headers are never logged.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}
