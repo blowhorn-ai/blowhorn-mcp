@@ -31,7 +31,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: tools/package-lock.json
+          cache-dependency-path: |
+            tools/package-lock.json
+            hosted/package-lock.json
       # The root package says "os": ["darwin"], so npm refuses `npm ci` at the
       # root on ubuntu. The dev tooling is its own package in tools/, which
       # installs anywhere without --force.

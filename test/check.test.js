@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const { pngSize, frontmatter, factProblems, RULES } = require("../scripts/check.js");
+const { pngSize, frontmatter, factProblems, RULES, rulesFor } = require("../scripts/check.js");
 
 const broken = (line) => RULES.filter(([, re]) => re.test(line)).map(([rule]) => rule);
 
@@ -27,6 +27,17 @@ test("copy rules catch what they forbid and pass plain copy", () => {
   }
   for (const line of ["Blowhorn runs locally on your Mac over stdio.", "Once the npm package is published, npx -y blowhorn-mcp will work.", "runs-on: ubuntu-latest"]) {
     assert.deepStrictEqual(broken(line), [], line);
+  }
+});
+
+test("hosted/ is exempt only from the local-only rules", () => {
+  const brokenIn = (file, line) => rulesFor(file).filter(([, re]) => re.test(line)).map(([rule]) => rule);
+  for (const line of ["Try our hosted server", "Sign in with OAuth", "Calls https://cloud.blowhorn.ai", "Works on Linux"]) {
+    assert.ok(brokenIn("README.md", line).length, line);
+    assert.deepStrictEqual(brokenIn("hosted/README.md", line), [], line);
+  }
+  for (const line of [`a ${String.fromCharCode(0x2014)} b`, "Layer5 Cloud", "Ask Casey", "See pricing", "blowhorn-mcp is now available on npm", "Blowhorn is listed on Glama"]) {
+    assert.ok(brokenIn("hosted/src/index.js", line).length, line);
   }
 });
 

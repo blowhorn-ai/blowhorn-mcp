@@ -64,13 +64,32 @@ const RULES = [
   ["no claims of existing marketplace listings", /\b(available|listed|published|find (us|it|Blowhorn)) (on|in) (the )?(Glama|Smithery|PulseMCP|mcp\.so|MCP Registry|Cline (MCP )?Marketplace|Cursor (Plugin )?(Marketplace|Directory)|Gemini (CLI )?Extensions? Gallery)\b/i],
 ];
 
+/**
+ * hosted/ is the one place that describes the interim gateway, a Cloud
+ * service, so it is exempt from the rules that say the MCP server is local
+ * only. Every other rule still holds there.
+ */
+const LOCAL_ONLY_RULES = [
+  "no cloud.blowhorn.ai: the server runs locally",
+  "no hosted or remote server claims",
+  "no OAuth claims",
+  "no Windows or Linux support claims: macOS only",
+];
+
+/** The RULES `file` is held to. */
+function rulesFor(file) {
+  if (RULE_FILES.includes(file)) return RULES.slice(0, 2);
+  if (file.startsWith("hosted/")) return RULES.filter(([rule]) => !LOCAL_ONLY_RULES.includes(rule));
+  return RULES;
+}
+
 /** Tracked and untracked-but-not-ignored files, minus the exempt ones. */
 function textFiles() {
   const out = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: ROOT, encoding: "utf8" });
   return out
     .split("\0")
     .filter(Boolean)
-    .filter((f) => f !== "LICENSE" && !f.startsWith("schemas/vendor/") && path.basename(f) !== "package-lock.json")
+    .filter((f) => f !== "LICENSE" && !f.startsWith("schemas/vendor/") && !f.startsWith("hosted/schemas/vendor/") && path.basename(f) !== "package-lock.json")
     .filter((f) => fs.existsSync(path.join(ROOT, f)))
     .filter((f) => !fs.readFileSync(path.join(ROOT, f)).includes(0));
 }
@@ -79,7 +98,7 @@ function copy() {
   const problems = [];
   for (const file of textFiles()) {
     const lines = fs.readFileSync(path.join(ROOT, file), "utf8").split("\n");
-    const rules = RULE_FILES.includes(file) ? RULES.slice(0, 2) : RULES;
+    const rules = rulesFor(file);
     lines.forEach((line, i) => {
       for (const [rule, re] of rules) {
         const m = line.match(re);
@@ -201,7 +220,7 @@ function pack() {
 
 const CHECKS = { drift, copy, skill, facts, logo, pack };
 
-module.exports = { pngSize, frontmatter, factProblems, RULES };
+module.exports = { pngSize, frontmatter, factProblems, RULES, rulesFor };
 
 if (require.main === module) {
   const names = process.argv.slice(2);
