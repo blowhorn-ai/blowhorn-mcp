@@ -29,14 +29,13 @@ const DEFINITION = errorDefinitionSchema();
 const DATA = new Validator(
   {
     type: "object",
-    required: ["code", "moniker", "probableCauses", "referenceUrl", "retryAfter"],
+    required: ["code", "moniker", "probableCauses", "referenceUrl"],
     additionalProperties: false,
     properties: {
       code: DEFINITION.properties.code,
       moniker: DEFINITION.properties.moniker,
       probableCauses: { ...DEFINITION.properties.probableCauses, minItems: 1 },
       referenceUrl: DEFINITION.properties.referenceUrl,
-      retryAfter: { type: "integer", minimum: 1 },
     },
   },
   "2020-12",
@@ -116,7 +115,6 @@ async function assertRefused(res, name) {
     moniker: "ErrRateLimited",
     probableCauses: d.probableCauses.filter((c) => c.id === LIMITS[name].cause),
     referenceUrl: "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1010/",
-    retryAfter: LIMITS[name].period,
   });
   assert.ok(body.error.data.probableCauses[0].remediations.length >= 2);
   return body;
@@ -147,20 +145,42 @@ function readWranglerConfig() {
   return JSON.parse(out);
 }
 
-test("wrangler.jsonc declares both rate limit bindings with the documented limits, as LIMITS says", () => {
+/** README.md's Rate limits table, as { binding: { limit, period } } from its "N requests per P s" cells. */
+function readmeLimits() {
+  const readme = fs.readFileSync(path.join(HOSTED, "README.md"), "utf8");
+  const section = readme.slice(readme.indexOf("\n## Rate limits\n"), readme.indexOf("\n## ", readme.indexOf("\n## Rate limits\n") + 1));
+  const rows = [...section.matchAll(/^\|[^|\n]*\| `(RATE_LIMIT_[A-Z]+)` \|[^|\n]*\| (\d+) requests per (\d+) s \|/gm)];
+  return Object.fromEntries(rows.map(([, binding, limit, period]) => [binding, { limit: Number(limit), period: Number(period) }]));
+}
+
+test("wrangler.jsonc declares every LIMITS binding with its period, a positive integer limit and its own namespace", () => {
   const { ratelimits } = readWranglerConfig();
-  assert.deepStrictEqual(ratelimits, [
-    { name: "RATE_LIMIT_CALLER", namespace_id: "41301", simple: { limit: 60, period: 60 } },
-    { name: "RATE_LIMIT_ADDRESS", namespace_id: "41302", simple: { limit: 300, period: 60 } },
-  ]);
+  assert.ok(Array.isArray(ratelimits), "wrangler.jsonc has a ratelimits list");
   for (const [name, l] of Object.entries(LIMITS)) {
-    const declared = ratelimits.find((r) => r.name === l.binding);
-    assert.ok(declared, `${name}: ${l.binding} is not declared`);
-    assert.deepStrictEqual(declared, { name: l.binding, namespace_id: l.namespaceId, simple: { limit: l.limit, period: l.period } }, name);
-    assert.match(declared.namespace_id, /^[1-9][0-9]*$/, "namespace_id is a string integer");
-    assert.ok([10, 60].includes(declared.simple.period), "period is 10 or 60");
+    const declared = ratelimits.filter((r) => r.name === l.binding);
+    assert.strictEqual(declared.length, 1, `${name}: ${l.binding} is declared once`);
+    const [{ namespace_id: namespaceId, simple }] = declared;
+    assert.strictEqual(simple?.period, l.period, `${name}: the period in wrangler.jsonc is LIMITS' period`);
+    assert.ok(Number.isInteger(simple.limit) && simple.limit > 0, `${name}: the limit is a positive integer`);
+    assert.ok([10, 60].includes(simple.period), `${name}: period is 10 or 60`);
+    assert.match(String(namespaceId), /^[1-9][0-9]*$/, `${name}: namespace_id is a string integer`);
+    assert.strictEqual(typeof namespaceId, "string", `${name}: namespace_id is a string`);
   }
-  assert.ok(LIMITS.address.limit > LIMITS.caller.limit, "the address limit is the looser one");
+  const namespaces = ratelimits.map((r) => r.namespace_id);
+  assert.strictEqual(new Set(namespaces).size, namespaces.length, "every namespace_id is distinct");
+  const limit = (name) => ratelimits.find((r) => r.name === LIMITS[name].binding).simple.limit;
+  assert.ok(limit("address") > limit("caller"), "the address limit is the looser one");
+});
+
+test("README.md's Rate limits table states the limits wrangler.jsonc declares", () => {
+  const { ratelimits } = readWranglerConfig();
+  const declared = Object.fromEntries(ratelimits.map((r) => [r.name, { limit: r.simple.limit, period: r.simple.period }]));
+  assert.deepStrictEqual(readmeLimits(), declared);
+});
+
+test("every limit names a probable cause of blowhorn-mcp-1010", () => {
+  const causes = definition("rate_limited").probableCauses.map((c) => c.id);
+  for (const [name, { cause }] of Object.entries(LIMITS)) assert.ok(causes.includes(cause), `${name}: ${cause}`);
 });
 
 test("under both limits a session runs as usual, keyed by the address and the token's SHA-256, never the token", async (t) => {
@@ -275,9 +295,17 @@ test("/healthz and the OPTIONS preflight are never limited", async (t) => {
   assert.strictEqual(address.keys.length + caller.keys.length, 0);
 });
 
-test("without the bindings in env, both limits are skipped", async (t) => {
+test("without the bindings in env the request passes, and each missing binding logs ratelimit_unbound once per isolate", async (t) => {
   mockCloud(t);
-  assert.strictEqual((await worker.fetch(rpc("initialize", INIT), BASE_ENV, {})).status, 200);
+  const logs = captureLogs(t);
+  for (let i = 0; i < 3; i++) assert.strictEqual((await worker.fetch(rpc("initialize", INIT), BASE_ENV, {})).status, 200);
+  assert.deepStrictEqual(
+    logs.filter((l) => l.event === "ratelimit_unbound"),
+    [
+      { event: "ratelimit_unbound", limit: "address", binding: "RATE_LIMIT_ADDRESS" },
+      { event: "ratelimit_unbound", limit: "caller", binding: "RATE_LIMIT_CALLER" },
+    ],
+  );
 });
 
 test("a binding that throws lets the request through and logs ratelimit_failed with the error name only", async (t) => {

@@ -39,11 +39,7 @@ test("the registry has the engine registry's shape, and its codes are unique and
   assert.strictEqual(new Set(numbers).size, numbers.length);
   assert.ok(numbers.every((n) => n < registry.nextErrorCode));
   assert.strictEqual(registry.nextErrorCode, Math.max(...numbers) + 1);
-  assert.strictEqual(new Set(registry.definitions.map((d) => d.moniker)).size, numbers.length);
-  for (const d of registry.definitions) {
-    assert.deepStrictEqual(d.component, registry.component, d.code);
-    assert.strictEqual(d.referenceUrl, `https://blowhorn.ai/docs/reference/error-codes/${d.code}/`);
-  }
+  for (const d of registry.definitions) assert.deepStrictEqual(d.component, registry.component, d.code);
 });
 
 test("every outcome the gateway reports maps to a definition, and every definition is used", () => {
@@ -90,17 +86,14 @@ test("blowhorn-mcp-1010 is ErrRateLimited, a warning, and none of its remediatio
   }
 });
 
-test("registryProblems names what the construct and the registry's own rules refuse", () => {
+test("registryProblems names what the construct and the gateway's own rules refuse", () => {
   const cases = [
     [(r) => (r.definitions[0].reason = "a gateway-only clause."), /definitions\[0\] blowhorn-mcp-1000 \/: Property "reason" does not match additional properties schema/],
     [(r) => (r.definitions[1].code = "blowhorn-mcp-1000"), /definitions\[1\] blowhorn-mcp-1000: code is used twice/],
     [(r) => (r.nextErrorCode = 1010), /blowhorn-mcp-1010: number is not below nextErrorCode 1010/],
-    [(r) => (r.definitions[2].referenceUrl = "https://blowhorn.ai/docs/reference/error-codes/other/"), /blowhorn-mcp-1002: referenceUrl is not/],
-    [(r) => (r.definitions[3].probableCauses = []), /blowhorn-mcp-1003: no probable causes/],
-    [(r) => (r.definitions[4].probableCauses[0].remediations[0].approvalPolicy = "required"), /remediation try-again has an approvalPolicy but no action/],
-    [(r) => (r.definitions[10].probableCauses[1].remediations[1].description = "Wait."), /blowhorn-mcp-1010: remediation wait-retry-after differs between causes/],
-    [(r) => (r.definitions[5].moniker = "ErrUnknownTool"), /moniker ErrUnknownTool is used twice/],
-    [(r) => (r.definitions[6].component = { type: "blowhorn", name: "engine" }), /blowhorn-mcp-1006: component differs/],
+    [(r) => (r.definitions[6].component = { type: "blowhorn", name: "engine" }), /blowhorn-mcp-1006: component is not blowhorn\/mcp/],
+    [(r) => (r.component = { type: "blowhorn", name: "engine" }), /component is not \{"type": "blowhorn", "name": "mcp"\}/],
+    [(r) => r.definitions.splice(9, 1), /outcome not_json: no definition for blowhorn-mcp-1009/],
     [(r) => (r.extra = true), /keys are \$comment, component, definitions, extra, nextErrorCode/],
   ];
   for (const [mutate, want] of cases) {

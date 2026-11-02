@@ -33,9 +33,11 @@ Notes for coding agents working in this repo.
   The gateway's error codes (`blowhorn-mcp-NNNN`, never reused) are data in
   `hosted/errors/mcp.json`, each definition valid against the vendored
   ErrorDefinition construct: add a code there first, bump `nextErrorCode`,
-  then map its outcome in `hosted/src/errors.js`. The rate limits live in
-  both `hosted/wrangler.jsonc` and `LIMITS` in `hosted/src/ratelimit.js`;
-  change them together (a test fails when they differ). hosted/ is exempt
+  then map its outcome in `hosted/src/errors.js`. Each rate limit lives
+  only in `ratelimits` in `hosted/wrangler.jsonc` (and the table in
+  `hosted/README.md`, which a test holds to it); `LIMITS` in
+  `hosted/src/ratelimit.js` keeps only the binding name, period and cause,
+  and a test fails when a binding or period differs. hosted/ is exempt
   from the local-only copy rules, never from the others.
 - **Tests** run behavior (execute scripts and the launcher, parse output);
   never grep source code.

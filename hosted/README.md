@@ -44,13 +44,12 @@ repo is about.
 - **Activity events.** Every `tools/call` is recorded as one event in your
   Cloud activity (`POST /api/events`, with your own token). See
   [What the gateway records](#what-the-gateway-records).
-- **Rate limits.** 60 requests a minute per token and 300 per network
-  address; over either, `429` with `Retry-After`. See
-  [Rate limits](#rate-limits).
+- **Rate limits.** Per token and per network address; over either, `429`
+  with `Retry-After`. See [Rate limits](#rate-limits).
 - **Logs.** Workers Logs holds only the gateway's own lines: method, tool
   name, status, outcome and duration; `auth_failed` for a missing or
-  malformed token; `rate_limited` and `ratelimit_failed` from the
-  [rate limits](#rate-limits); and the event lines in
+  malformed token; `rate_limited`, `ratelimit_failed` and
+  `ratelimit_unbound` from the [rate limits](#rate-limits); and the event lines in
   [What the gateway records](#what-the-gateway-records). Cloudflare's
   invocation logs, which record request metadata, are turned off in
   `wrangler.jsonc`.
@@ -80,10 +79,9 @@ Cloudflare Workers Rate Limiting bindings declared in `wrangler.jsonc`
 | Per caller | `RATE_LIMIT_CALLER` | The hex SHA-256 of the bearer token, never the token | 60 requests per 60 s | Once the token parses, before any Cloud call |
 
 Every request counts, `initialize` and `tools/list` included, not only
-`tools/call`. A refused request answers HTTP `429` with
-`Retry-After: 60` (the period: the binding does not say how much of it is
-left), the usual CORS headers for an allowed `Origin`, and a JSON-RPC
-error:
+`tools/call`. A refused request answers HTTP `429` with `Retry-After` set
+to the limit's period (the binding does not say how much of it is left),
+the usual CORS headers for an allowed `Origin`, and a JSON-RPC error:
 
 ```json
 {
@@ -105,8 +103,7 @@ error:
           ]
         }
       ],
-      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1010/",
-      "retryAfter": 60
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1010/"
     }
   }
 }
@@ -120,20 +117,24 @@ Cloud and records no activity event. It logs one line,
 `{"outcome":"rate_limited","limit":"address"}`, or for the caller limit
 `"limit":"caller"` with `"caller"` set to the first 8 hex characters of the
 token's hash, never the token or the whole hash. If a binding fails, the
-request goes through and logs `ratelimit_failed` with the error's name: the
-limits protect Cloud, they are not authentication.
+request goes through and logs `ratelimit_failed` with the error's name. If
+a binding is missing from `env` (a deploy that dropped `ratelimits`, or a
+wrangler `env` block, which does not inherit them), the request goes
+through and the isolate logs one `ratelimit_unbound` line naming the
+binding. Either way the limits protect Cloud, they are not authentication.
 
 The limits are approximate. Cloudflare counts per location and eventually
 consistently, so a burst spread across locations can get more through, and
 a few requests over the limit can pass before refusals start.
 
-To change a limit, edit `ratelimits` in `wrangler.jsonc` and `LIMITS` in
-`src/ratelimit.js` together; `test/ratelimit.test.js` fails when they
-differ, or when either binding is missing from `wrangler.jsonc`. `period`
-is 10 or 60 seconds. `namespace_id` (`41301`, `41302`) is a string integer
-unique in the Cloudflare account: keep it when changing a limit, so the
-counters carry over. Without the bindings in `env` (unit tests that pass
-none), the limits are skipped.
+Each limit lives only in `ratelimits` in `wrangler.jsonc`: edit it there,
+and the table above to match (`test/ratelimit.test.js` fails when the two
+differ). `LIMITS` in `src/ratelimit.js` holds only what the code needs of
+each binding (its name, its period for `Retry-After`, and its cause), and
+the test fails when a binding is missing from `wrangler.jsonc` or declares
+another period. `period` is 10 or 60 seconds. `namespace_id` (`41301`,
+`41302`) is a string integer unique in the Cloudflare account: keep it when
+changing a limit, so the counters carry over.
 
 ## Revoke a leaked token
 
@@ -169,7 +170,7 @@ retried: a failed post is one `event_post_failed` log line. `initialize` and
 |-------|-------|
 | `category` / `action` | `mcp` / `tool_called` |
 | `severity` | `informational` on success; `warning` for the caller's fault (unknown tool, invalid arguments, refused request, a Cloud 4xx); `error` when Cloud or the path to it failed (5xx, timeout, unreachable, redirect, answer too large, not JSON) |
-| `description` | One sentence: the tool, and the duration or the short reason it failed |
+| `description` | On success one sentence with the tool and the duration; on failure one saying the tool failed (with Cloud's HTTP status for a Cloud 4xx or 5xx), then the code's `shortDescription` |
 | `operationId` | The W3C `traceparent` trace id of the HTTP request as a UUID, else a random UUID per request |
 | `idempotencyKey` | `mcp-hosted:<uuid>`, one per call |
 | `metadata` | gateway, version, tool, outcome, httpStatus, durationMs, requestId, rpcId, the arguments with secret-named values redacted (only argument names for an unknown tool, invalid arguments, or arguments over 8 KB), and `error` on failure |
@@ -216,13 +217,14 @@ person or their client can do any of them.
 | `blowhorn-mcp-1010` | `ErrRateLimited` | `rate_limited`, a [429](#rate-limits), never an event |
 
 `make hosted-check` validates every definition against the vendored
-ErrorDefinition construct (`schemas/vendor/blowhorn/`) and checks what the
-construct cannot: codes unique and below `nextErrorCode`, the reference URL,
-no empty cause or remediation list, no `approvalPolicy` without an `action`
-(`scripts/registry.js`). `src/errors.js` maps each outcome to its code and
-refuses to load if one has no definition. To add a code: add its definition
-with the number in `nextErrorCode`, bump `nextErrorCode`, then map its
-outcome in `src/errors.js`. Numbers are never reused.
+ErrorDefinition construct (`schemas/vendor/blowhorn/`) and checks the
+gateway's own rules (`scripts/registry.js`): the component is
+`blowhorn`/`mcp`, codes are unique and below `nextErrorCode`, and every
+outcome `src/errors.js` maps has a definition. blowhorn-ai/blowhorn's
+registry has further rules of its own that are not copied here. To add a
+code: add its definition with the number in `nextErrorCode`, bump
+`nextErrorCode`, then map its outcome in `src/errors.js`. Numbers are never
+reused.
 
 ## Where the tools come from
 

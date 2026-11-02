@@ -3,9 +3,9 @@
  * The gateway's error codes. The definitions are data, hosted/errors/mcp.json,
  * in the shape of blowhorn-ai/blowhorn's error code registry; every one
  * validates against the vendored ErrorDefinition construct
- * (test/errors.test.js). This module only maps each failing outcome the
- * gateway reports to its code, and refuses to load when one has no
- * definition, so a Worker missing one cannot deploy.
+ * (scripts/registry.js, run by `make check`). This module only maps each
+ * failing outcome the gateway reports to its code; the same check fails when
+ * one has no definition, so a Worker missing one does not deploy.
  */
 import registry from "../errors/mcp.json" with { type: "json" };
 
@@ -25,9 +25,6 @@ export const CODES = Object.freeze({
 });
 
 const BY_CODE = new Map(registry.definitions.map((d) => [d.code, d]));
-for (const [outcome, code] of Object.entries(CODES)) {
-  if (!BY_CODE.has(code)) throw new Error(`errors/mcp.json has no definition for ${code} (outcome ${outcome})`);
-}
 
 /** The registry definition for a failing `outcome`; throws for an outcome with no code. */
 export function definition(outcome) {

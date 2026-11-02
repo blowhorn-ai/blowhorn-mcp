@@ -14,14 +14,16 @@
 import { definition } from "./errors.js";
 
 /**
- * The limits, exactly as wrangler.jsonc declares them; test/ratelimit.test.js
- * fails when the two differ. The binding cannot report its own period, so
+ * What the code needs of each limit. The limit itself (requests per period)
+ * and the namespace id live only in wrangler.jsonc's `ratelimits`;
+ * test/ratelimit.test.js fails when a binding here is not declared there
+ * with the same period. The binding cannot report its own period, so
  * Retry-After is the period: the longest a refused caller has to wait.
  * `cause` is the probable cause in blowhorn-mcp-1010 a refusal names.
  */
 export const LIMITS = Object.freeze({
-  address: Object.freeze({ binding: "RATE_LIMIT_ADDRESS", namespaceId: "41302", limit: 300, period: 60, cause: "shared-address" }),
-  caller: Object.freeze({ binding: "RATE_LIMIT_CALLER", namespaceId: "41301", limit: 60, period: 60, cause: "too-many-calls" }),
+  address: Object.freeze({ binding: "RATE_LIMIT_ADDRESS", period: 60, cause: "shared-address" }),
+  caller: Object.freeze({ binding: "RATE_LIMIT_CALLER", period: 60, cause: "too-many-calls" }),
 });
 
 /*
@@ -33,9 +35,8 @@ export const LIMITS = Object.freeze({
 export const RATE_LIMITED = -32029;
 
 const RATE_LIMITED_ERROR = definition("rate_limited");
-for (const [name, { cause }] of Object.entries(LIMITS)) {
-  if (!RATE_LIMITED_ERROR.probableCauses.some((c) => c.id === cause)) throw new Error(`${RATE_LIMITED_ERROR.code} has no cause ${cause} for the ${name} limit`);
-}
+/** The bindings found missing from env, so each logs ratelimit_unbound once per isolate. */
+const UNBOUND = new Set();
 const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
 const HEXTET = /^[0-9a-f]{1,4}$/;
 
@@ -73,15 +74,23 @@ export function addressKey(ip) {
 
 /**
  * Whether the `name` limit (a LIMITS key) refuses `key`. A binding missing
- * from `env` (local tests that pass none) skips the limit; the deployed
- * config is checked by test/ratelimit.test.js. A binding that throws lets
- * the request through and logs ratelimit_failed: the limits protect Cloud,
- * they are not authentication, so a limiter outage must not take the gateway
- * down with it.
+ * from `env` (a deploy that dropped `ratelimits`, or a wrangler `env` block,
+ * which does not inherit them) lets the request through and logs one
+ * ratelimit_unbound line per isolate naming the binding, so the gap shows in
+ * Workers Logs. A binding that throws lets the request through and logs
+ * ratelimit_failed. Either way the limits protect Cloud, they are not
+ * authentication, so a limiter outage must not take the gateway down with it.
  */
 export async function refuses(env, name, key) {
-  const binding = env?.[LIMITS[name].binding];
-  if (typeof binding?.limit !== "function") return false;
+  const { binding: bindingName } = LIMITS[name];
+  const binding = env?.[bindingName];
+  if (typeof binding?.limit !== "function") {
+    if (!UNBOUND.has(bindingName)) {
+      UNBOUND.add(bindingName);
+      console.log(JSON.stringify({ event: "ratelimit_unbound", limit: name, binding: bindingName }));
+    }
+    return false;
+  }
   try {
     const { success } = await binding.limit({ key });
     return success === false;
@@ -92,10 +101,11 @@ export async function refuses(env, name, key) {
 }
 
 /**
- * The 429 for a request the `name` limit refused: Retry-After, the given CORS
- * headers, and a JSON-RPC error whose message is blowhorn-mcp-1010's short
- * description and whose data is its code, moniker and reference, with only
- * the probable cause this limit names, and that cause's remediations.
+ * The 429 for a request the `name` limit refused: Retry-After (the period),
+ * the given CORS headers, and a JSON-RPC error whose message is
+ * blowhorn-mcp-1010's short description and whose data is its code, moniker
+ * and reference, with only the probable cause this limit names, and that
+ * cause's remediations.
  */
 export function refusal(name, headers = {}) {
   const { period, cause } = LIMITS[name];
@@ -111,7 +121,6 @@ export function refusal(name, headers = {}) {
         moniker: RATE_LIMITED_ERROR.moniker,
         probableCauses: causes.filter((c) => c.id === cause),
         referenceUrl: RATE_LIMITED_ERROR.referenceUrl,
-        retryAfter: period,
       },
     },
   };

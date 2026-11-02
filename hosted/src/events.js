@@ -12,7 +12,7 @@
 import { Validator } from "@cfworker/json-schema";
 import catalog from "./catalog.generated.json" with { type: "json" };
 import { USER_AGENT, VERSION, scrub } from "./cloud.js";
-import { definition } from "./errors.js";
+import { CODES, definition } from "./errors.js";
 import { redact } from "./redact.js";
 
 export const CATEGORY = "mcp";
@@ -51,29 +51,19 @@ const VALIDATOR = new Validator(SCHEMA, "2020-12", false);
  * wire metadata.error is the released MeshKit shape (meshery/schemas
  * MeshkitError), whose flat probableCause and suggestedRemediation lists are
  * derived from the definition until the nested error instance
- * (meshery/schemas#1334) ships.
+ * (meshery/schemas#1334) ships. A failure's description gives its
+ * definition's shortDescription as the reason, so each text has one copy.
  *
- * REASONS is the short clause each failure's description gives. It is the
- * gateway's own text, not part of a definition, and its keys are the failing
- * outcomes a tool call event can record.
+ * FAILURES are the failing outcomes a tool call event can record: every
+ * outcome with a code but rate_limited, a refused request, which is not a
+ * tool call (src/ratelimit.js).
  */
-const REASONS = Object.freeze({
-  unknown_tool: "the tool is not one this gateway offers.",
-  invalid_arguments: "the arguments did not match the tool's input schema.",
-  refused: "the gateway refused to send the request.",
-  cloud_rejected: "Cloud answered with a client error.",
-  cloud_failed: "Cloud answered with a server error.",
-  timeout: "Cloud did not answer in time.",
-  unreachable: "the gateway could not reach Cloud.",
-  redirect: "Cloud answered with a redirect, which the gateway does not follow.",
-  too_large: "Cloud's answer was too large to return.",
-  not_json: "Cloud's answer was not JSON.",
-});
+const FAILURES = Object.freeze(Object.keys(CODES).filter((outcome) => outcome !== "rate_limited"));
 
 /** The event level for each outcome: informational on success, else its definition's severity (a caller's mistake or a refused call is a warning, a failure of Cloud or the path to it an error). */
 const SEVERITY = Object.freeze({
   ok: "informational",
-  ...Object.fromEntries(Object.keys(REASONS).map((outcome) => [outcome, definition(outcome).severity])),
+  ...Object.fromEntries(FAILURES.map((outcome) => [outcome, definition(outcome).severity])),
 });
 
 /** The MeshkitError for a failing outcome's definition: the flat MeshKit lists derived from its causes and their remediations. */
@@ -99,11 +89,15 @@ export function operationId(request) {
   return crypto.randomUUID();
 }
 
-/** The description: one plain sentence, with the short reason only for a failure. */
+/**
+ * The description: for a success one sentence with the duration; for a
+ * failure one saying so (with Cloud's HTTP status when Cloud answered with an
+ * error), then the definition's shortDescription.
+ */
 function describe(tool, outcome, httpStatus, durationMs) {
   if (outcome === "ok") return `Called ${tool} through the hosted MCP server in ${durationMs} ms.`;
-  const reason = outcome === "cloud_rejected" || outcome === "cloud_failed" ? `Cloud answered ${httpStatus}.` : REASONS[outcome];
-  return `${tool} through the hosted MCP server failed: ${reason}`;
+  const status = outcome === "cloud_rejected" || outcome === "cloud_failed" ? ` with HTTP ${httpStatus}` : "";
+  return `${tool} through the hosted MCP server failed${status}. ${definition(outcome).shortDescription}`;
 }
 
 /** `value` with every string, key included, that holds `token` cleaned, so the caller's token is never recorded. */
@@ -138,8 +132,9 @@ export function toolEvent({ tool, outcome, httpStatus = 0, durationMs, requestId
     metadata.argumentNames = Object.keys(args).slice(0, MAX_NAMES).map((k) => k.slice(0, MAX_NAME_CHARS));
   }
   if (outcome !== "ok") {
-    if (!(outcome in REASONS)) throw new Error(`no tool call event for outcome ${outcome}`);
-    metadata.error = meshkitError(definition(outcome), String(message || REASONS[outcome]).slice(0, MAX_ERROR_CHARS));
+    if (!FAILURES.includes(outcome)) throw new Error(`no tool call event for outcome ${outcome}`);
+    const failure = definition(outcome);
+    metadata.error = meshkitError(failure, String(message || failure.shortDescription).slice(0, MAX_ERROR_CHARS));
   }
   return scrubDeep(
     {

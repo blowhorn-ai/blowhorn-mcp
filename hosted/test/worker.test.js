@@ -10,7 +10,9 @@ import { eventProblems } from "../src/events.js";
 const TOKEN = "fake-test-token-0123456789";
 const ORG = "11111111-2222-4333-8444-555555555555";
 const ITEM = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-const ENV = { CLOUD_API_BASE: "https://cloud.blowhorn.ai", ALLOWED_ORIGINS: "https://app.example.test" };
+/** A fake Workers Rate Limiting binding that never refuses: these tests want no limiting (test/ratelimit.test.js covers it). */
+const UNLIMITED = Object.freeze({ limit: async () => ({ success: true }) });
+const ENV = { CLOUD_API_BASE: "https://cloud.blowhorn.ai", ALLOWED_ORIGINS: "https://app.example.test", RATE_LIMIT_ADDRESS: UNLIMITED, RATE_LIMIT_CALLER: UNLIMITED };
 const MCP = "https://mcp.blowhorn.ai/mcp";
 const ACCEPT = "application/json, text/event-stream";
 const EVENTS = "https://cloud.blowhorn.ai/api/events";
@@ -175,10 +177,10 @@ test("OPTIONS /mcp is 204 only for an allowed origin", async () => {
 test("a CLOUD_API_BASE other than https://cloud.blowhorn.ai is refused on /mcp and /healthz", async (t) => {
   const calls = mockCloud(t, () => assert.fail("Cloud was called"));
   for (const CLOUD_API_BASE of ["http://cloud.blowhorn.ai", "https://evil.example.test", "https://cloud.blowhorn.ai.evil.example.test", "https://cloud.blowhorn.ai/api", "https://cloud.blowhorn.ai:8443"]) {
-    assert.strictEqual((await call(rpc("initialize", INIT, auth), { CLOUD_API_BASE })).res.status, 500, CLOUD_API_BASE);
-    assert.strictEqual((await call(new Request("https://mcp.blowhorn.ai/healthz"), { CLOUD_API_BASE })).res.status, 500, CLOUD_API_BASE);
+    assert.strictEqual((await call(rpc("initialize", INIT, auth), { ...ENV, CLOUD_API_BASE })).res.status, 500, CLOUD_API_BASE);
+    assert.strictEqual((await call(new Request("https://mcp.blowhorn.ai/healthz"), { ...ENV, CLOUD_API_BASE })).res.status, 500, CLOUD_API_BASE);
   }
-  assert.strictEqual((await call(rpc("initialize", INIT, auth), { CLOUD_API_BASE: "https://cloud.blowhorn.ai/" })).res.status, 200);
+  assert.strictEqual((await call(rpc("initialize", INIT, auth), { ...ENV, CLOUD_API_BASE: "https://cloud.blowhorn.ai/" })).res.status, 200);
   assert.strictEqual(calls.length, 0);
 });
 

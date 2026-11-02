@@ -27,14 +27,17 @@ launcher's, which every listing file follows.
   HTTP `429` with `Retry-After` and a JSON-RPC error carrying the new code
   `blowhorn-mcp-1010` (`ErrRateLimited`); the request is not sent to Cloud,
   records no activity event, and logs one `rate_limited` line without the
-  token (#13).
+  token. A binding missing from `env` lets requests through and logs one
+  `ratelimit_unbound` line per isolate naming it (#13).
 - `hosted/`: the gateway's error codes moved out of `src/events.js` into a
   registry file, `hosted/errors/mcp.json`, in the shape of
   blowhorn-ai/blowhorn's registry. Every definition gains a moniker,
   severity, short and long description and reference URL, and is validated
   by `make hosted-check` against blowhorn-ai/blowhorn's ErrorDefinition
   construct, now vendored in `hosted/schemas/vendor/blowhorn/`. Events send
-  the same `metadata.error` as before. `hosted/schemas/vendor/SOURCES.json`
+  the same `metadata.error` as before; a failed call's event `description`
+  now gives its code's `shortDescription` as the reason, the only copy of
+  that text. `hosted/schemas/vendor/SOURCES.json`
   lists one entry per pinned repo (#13).
 
 ## 0.1.1
