@@ -115,18 +115,22 @@ itself runs on Node, so `node` is always there.
 Follow [llms-install.md](llms-install.md). Cline does not expand `~`, so it
 needs the absolute path `/Users/<you>/.local/bin/blowhorn-mcp`.
 
-## npm launcher (coming)
+## npm
 
-Once the `blowhorn-mcp` npm package is published, any client will also be
-able to start the server with:
+The launcher is published on npm as
+[`blowhorn-mcp`](https://www.npmjs.com/package/blowhorn-mcp) and in the
+official [MCP Registry](https://registry.modelcontextprotocol.io/) as
+`io.github.blowhorn-ai/blowhorn`, so any client can start the server with:
 
 ```bash
 npx -y blowhorn-mcp
 ```
 
-It is not published yet; use `~/.local/bin/blowhorn-mcp` as above. The npm
-launcher needs Node.js 20 or later, and any arguments after `blowhorn-mcp`
-go to the server unchanged.
+In a client's JSON config, that is `"command": "npx"` with
+`"args": ["-y", "blowhorn-mcp"]`; on Claude Code it is
+`claude mcp add blowhorn -- npx -y blowhorn-mcp`. The npm launcher needs
+Node.js 20 or later and the Blowhorn app installed, and any arguments after
+`blowhorn-mcp` go to the server unchanged.
 
 ## Example prompts
 

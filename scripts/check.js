@@ -60,8 +60,7 @@ const RULES = [
   ["no OAuth claims", /\bOAuth\b/i],
   ["no Windows or Linux support claims: macOS only", /\b(Windows|Linux)\b/],
   ["no pricing", /\b(pricing|price[sd]?|per month|free trial|subscription)\b/i],
-  ["npm availability is future tense", /\b(is|are|now) (available|published|live) on npm\b|\bnpm (install|i) (-g |--global )?blowhorn-mcp\b|npmjs\.com\/package\/blowhorn-mcp/i],
-  ["no claims of existing marketplace listings", /\b(available|listed|published|find (us|it|Blowhorn)) (on|in) (the )?(Glama|Smithery|PulseMCP|mcp\.so|MCP Registry|Cline (MCP )?Marketplace|Cursor (Plugin )?(Marketplace|Directory)|Gemini (CLI )?Extensions? Gallery)\b/i],
+  ["no claims of existing marketplace listings", /\b(available|listed|published|find (us|it|Blowhorn)) (on|in) (the )?(Glama|Smithery|PulseMCP|mcp\.so|Cline (MCP )?Marketplace|Cursor (Plugin )?(Marketplace|Directory)|Gemini (CLI )?Extensions? Gallery)\b/i],
 ];
 
 /**
