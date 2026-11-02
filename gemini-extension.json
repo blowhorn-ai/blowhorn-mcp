@@ -1,6 +1,6 @@
 {
   "name": "blowhorn",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
   "mcpServers": {
     "blowhorn": {

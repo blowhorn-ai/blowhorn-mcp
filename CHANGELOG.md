@@ -5,6 +5,13 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+## 0.1.3
+
+- The README, the long description and the Blowhorn skill name the risky
+  tools hidden by default without a count, and add the two that Blowhorn
+  hides after 1.84.0: `service_adopt` and
+  `chrome_attach_chrome_uninstall_agent` (blowhorn-ai/blowhorn#1513).
+
 ## 0.1.2
 
 - Listing copy, the README and the Blowhorn skill no longer say every
