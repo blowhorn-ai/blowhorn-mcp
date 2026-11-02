@@ -5,6 +5,12 @@ updates:
     directory: /tools
     schedule:
       interval: weekly
+  # The hosted gateway (hosted/): the MCP SDK, the JSON Schema validator and
+  # the locked wrangler that deploys it (#12).
+  - package-ecosystem: npm
+    directory: /hosted
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:
