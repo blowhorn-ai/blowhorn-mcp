@@ -9,6 +9,10 @@ launcher's, which every listing file follows.
   package, until Cloud serves `/mcp` itself (#8). Its tools are generated
   from vendored meshery/schemas and checked by `make check`. It is not part
   of the npm package. See `hosted/README.md`.
+- `hosted/`: every tool call is recorded as a `tool_called` event in the
+  caller's Cloud activity (`POST /api/events`, with the caller's own token),
+  posted with `ctx.waitUntil` and validated against the vendored event
+  schemas (#11). See "What the gateway records" in `hosted/README.md`.
 
 ## 0.1.1
 

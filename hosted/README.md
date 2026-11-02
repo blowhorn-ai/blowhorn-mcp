@@ -45,9 +45,11 @@ repo is about.
   Cloud activity (`POST /api/events`, with your own token). See
   [What the gateway records](#what-the-gateway-records).
 - **Logs.** Workers Logs holds only the gateway's own lines: method, tool
-  name, status, outcome and duration, plus `auth_failed` for a missing or
-  malformed token. Cloudflare's invocation logs, which record
-  request metadata, are turned off in `wrangler.jsonc`.
+  name, status, outcome and duration; `auth_failed` for a missing or
+  malformed token; and the event lines in
+  [What the gateway records](#what-the-gateway-records). Cloudflare's
+  invocation logs, which record request metadata, are turned off in
+  `wrangler.jsonc`.
 - **Browsers.** A request without an `Origin` header is allowed. A request
   with one must match `ALLOWED_ORIGINS` exactly, else `403`. There is no
   wildcard CORS.
@@ -87,10 +89,10 @@ printf '{"token": "%s"}' "$TOKEN" | curl -sS -X POST https://cloud.blowhorn.ai/r
 Each `tools/call` posts one event to Cloud's createEvent API
 (`POST /api/events`) with the caller's own token, in the `organizationId`
 the call named when Cloud served the call there, else the caller's selected
-organization. It is posted with
-`ctx.waitUntil` alongside the tool result and never awaited, so it never
-delays or changes the result. It is never retried: a failed post is one `event_post_failed`
-log line. `initialize` and `tools/list` record nothing.
+organization. It is posted with `ctx.waitUntil` alongside the tool result
+and never awaited, so it never delays or changes the result. It is never
+retried: a failed post is one `event_post_failed` log line. `initialize` and
+`tools/list` record nothing.
 
 | Field | Value |
 |-------|-------|
