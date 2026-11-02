@@ -1,7 +1,7 @@
 {
   "name": "blowhorn-mcp",
-  "version": "0.1.1",
-  "description": "Starts the Blowhorn MCP server from the Blowhorn app on this Mac, over stdio: every Blowhorn command as a tool, dry run first.",
+  "version": "0.1.2",
+  "description": "Starts the Blowhorn MCP server from the Blowhorn app on this Mac, over stdio: your Blowhorn commands as tools, dry run first.",
   "keywords": [
     "blowhorn",
     "mcp",

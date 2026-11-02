@@ -5,6 +5,15 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+## 0.1.2
+
+- Listing copy, the README and the Blowhorn skill no longer say every
+  Blowhorn command is a tool or quote a tool count. From Blowhorn 1.62.0
+  five risky tools are hidden by default (`uninstall`,
+  `service_uninstall`, `auth_logout`, `desktop_build`, `desktop_install`);
+  the README and the long description say how to opt in with
+  `--allow-hidden-tool` or `BLOWHORN_MCP_ALLOW_HIDDEN_TOOLS`
+  (blowhorn-ai/blowhorn#1514).
 - `hosted/`: an interim read-only gateway, a Cloudflare Worker with its own
   package, until Cloud serves `/mcp` itself (#8). Its tools are generated
   from vendored meshery/schemas and checked by `make check`. It is not part
