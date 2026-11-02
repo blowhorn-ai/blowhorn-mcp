@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import worker, * as main from "../src/index.js";
 import { TOOLS, buildRequest, dispatch } from "../src/cloud.js";
+import { eventProblems } from "../src/events.js";
 
 const TOKEN = "fake-test-token-0123456789";
 const ORG = "11111111-2222-4333-8444-555555555555";
@@ -12,8 +13,11 @@ const ITEM = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const ENV = { CLOUD_API_BASE: "https://cloud.blowhorn.ai", ALLOWED_ORIGINS: "https://app.example.test" };
 const MCP = "https://mcp.blowhorn.ai/mcp";
 const ACCEPT = "application/json, text/event-stream";
+const EVENTS = "https://cloud.blowhorn.ai/api/events";
+const TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** Every response body the worker sent in this test file, to check the token never appears. */
+/** Every response body and posted event body the worker sent in this test file, to check the token never appears. */
 const bodies = [];
 const logs = [];
 
@@ -41,6 +45,7 @@ function mockCloud(t, respond) {
   const original = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), init });
+    if (String(url) === EVENTS) bodies.push(String(init.body));
     return respond(String(url), init);
   };
   t.after(() => {
@@ -53,12 +58,18 @@ function jsonResponse(status, body, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
 }
 
+/** An execution context whose waitUntil keeps the promises the worker hands it, for a test to settle. */
+function collector() {
+  const promises = [];
+  return { promises, waitUntil: (p) => promises.push(p), settle: () => Promise.all(promises) };
+}
+
 /** An SDK client connected to the worker through a fetch that never leaves the process. */
-async function client(t, headers = auth) {
+async function client(t, headers = auth, ctx = {}) {
   const transport = new StreamableHTTPClientTransport(new URL(MCP), {
     requestInit: { headers },
     fetch: async (url, init) => {
-      const res = await worker.fetch(new Request(url, init), ENV, {});
+      const res = await worker.fetch(new Request(url, init), ENV, ctx);
       bodies.push(await res.clone().text());
       return res;
     },
@@ -488,8 +499,198 @@ test("the gateway serves with code generation forbidden, as Workers do", async (
   assert.ok(!(await c.callTool({ name: "getEvents", arguments: { page: 1 } })).isError);
 });
 
-test("log lines carry only method, tool, status and duration", () => {
+/** The posted event bodies the worker sent to Cloud's createEvent, as parsed objects. */
+function postedEvents(calls) {
+  return calls.filter((c) => c.url === EVENTS).map((c) => JSON.parse(c.init.body));
+}
+
+/** A Cloud mock: `answer` for every call except the createEvent POST, which gets `event`. */
+function cloudWith(t, answer, event = () => new Response(null, { status: 201 })) {
+  return mockCloud(t, (url, init) => (url === EVENTS ? event(init) : answer(url, init)));
+}
+
+test("a successful tool call posts one tool_called event, as the caller, after its result", async (t) => {
+  const calls = cloudWith(t, () => jsonResponse(200, { events: [] }));
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  const result = await c.callTool({ name: "getEvents", arguments: { page: 1, organizationId: ORG } });
+  assert.ok(!result.isError);
+  await ctx.settle();
+  const posts = calls.filter((x) => x.url === EVENTS);
+  assert.strictEqual(posts.length, 1);
+  assert.strictEqual(posts[0].init.method, "POST");
+  assert.strictEqual(posts[0].init.headers.Authorization, `Bearer ${TOKEN}`);
+  assert.strictEqual(posts[0].init.headers["X-Current-Orgid"], ORG);
+  const [event] = postedEvents(calls);
+  assert.strictEqual(event.category, "mcp");
+  assert.strictEqual(event.action, "tool_called");
+  assert.strictEqual(event.severity, "informational");
+  assert.strictEqual(event.metadata.tool, "getEvents");
+  assert.strictEqual(event.metadata.outcome, "ok");
+  assert.strictEqual(event.metadata.httpStatus, 200);
+  assert.strictEqual(typeof event.metadata.durationMs, "number");
+  assert.match(event.idempotencyKey, new RegExp(`^mcp-hosted:${UUID.source.slice(1, -1)}$`));
+  assert.match(event.operationId, UUID);
+  assert.deepStrictEqual(eventProblems(event), []);
+});
+
+test("the operationId is the traceparent's trace id, and a bad traceparent falls back to a random UUID", async (t) => {
+  const calls = cloudWith(t, () => jsonResponse(200, {}));
+  const ctx = collector();
+  const c = await client(t, { ...auth, traceparent: `00-${TRACE}-00f067aa0ba902b7-01` }, ctx);
+  await c.callTool({ name: "getEvents", arguments: {} });
+  await ctx.settle();
+  assert.strictEqual(postedEvents(calls)[0].operationId, "4bf92f35-77b3-4da6-a3ce-929d0e0e4736");
+
+  const bad = collector();
+  const d = await client(t, { ...auth, traceparent: `00-${"0".repeat(32)}-00f067aa0ba902b7-01` }, bad);
+  await d.callTool({ name: "getEvents", arguments: {} });
+  await bad.settle();
+  const fallback = postedEvents(calls)[1].operationId;
+  assert.match(fallback, UUID);
+  assert.notStrictEqual(fallback, "00000000-0000-0000-0000-000000000000");
+});
+
+test("a Cloud 500 is an error event with the MeshkitError shape; a Cloud 404 is a warning", async (t) => {
+  const calls = cloudWith(t, (url) => (url.includes("/api/events/list") ? jsonResponse(500, { message: "boom" }) : jsonResponse(404, {})));
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  assert.strictEqual((await c.callTool({ name: "getEvents", arguments: {} })).isError, true);
+  assert.strictEqual((await c.callTool({ name: "getContentItem", arguments: { contentItemId: ITEM } })).isError, true);
+  await ctx.settle();
+  const [failed, missing] = postedEvents(calls);
+  assert.strictEqual(failed.severity, "error");
+  assert.strictEqual(failed.metadata.outcome, "cloud_failed");
+  assert.strictEqual(failed.metadata.httpStatus, 500);
+  assert.strictEqual(failed.metadata.error.error, "Cloud answered 500. boom");
+  assert.strictEqual(failed.metadata.error.code, "blowhorn-mcp-1004");
+  assert.ok(failed.metadata.error.probableCause.length > 0);
+  assert.ok(failed.metadata.error.suggestedRemediation.length > 0);
+  assert.ok(!("severity" in failed.metadata.error));
+  assert.ok(!failed.description.includes("boom"));
+  assert.deepStrictEqual(eventProblems(failed), []);
+  assert.strictEqual(missing.severity, "warning");
+  assert.strictEqual(missing.metadata.outcome, "cloud_rejected");
+  assert.strictEqual(missing.metadata.httpStatus, 404);
+  assert.deepStrictEqual(eventProblems(missing), []);
+});
+
+test("invalid arguments are a warning that names the argument, never its value; Cloud is not called", async (t) => {
+  const calls = cloudWith(t, () => assert.fail("Cloud was called"));
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  const result = await c.callTool({ name: "listContentItems", arguments: { bogus: "SENTINEL-VALUE" } });
+  assert.strictEqual(result.isError, true);
+  await ctx.settle();
+  const [event] = postedEvents(calls);
+  assert.strictEqual(event.severity, "warning");
+  assert.strictEqual(event.metadata.outcome, "invalid_arguments");
+  assert.deepStrictEqual(event.metadata.argumentNames, ["bogus"]);
+  assert.strictEqual(event.metadata.arguments, undefined);
+  assert.ok(!JSON.stringify(event).includes("SENTINEL-VALUE"));
+  assert.deepStrictEqual(eventProblems(event), []);
+});
+
+test("an unknown tool records a warning event and still answers with the JSON-RPC error", async (t) => {
+  const calls = cloudWith(t, () => assert.fail("Cloud was called"));
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  await assert.rejects(c.callTool({ name: "deleteContentItem", arguments: { contentItemId: ITEM } }), /Unknown tool/);
+  await ctx.settle();
+  const [event] = postedEvents(calls);
+  assert.strictEqual(event.severity, "warning");
+  assert.strictEqual(event.metadata.outcome, "unknown_tool");
+  assert.strictEqual(event.metadata.tool, "deleteContentItem");
+  assert.deepStrictEqual(event.metadata.argumentNames, ["contentItemId"]);
+  assert.ok(!JSON.stringify(event).includes(ITEM));
+});
+
+test("a Cloud 401 records nothing and logs that it was skipped", async (t) => {
+  const calls = cloudWith(t, () => jsonResponse(401, { message: "token rejected" }));
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  assert.strictEqual((await c.callTool({ name: "getEvents", arguments: {} })).isError, true);
+  await ctx.settle();
+  assert.strictEqual(postedEvents(calls).length, 0);
+  assert.strictEqual(ctx.promises.length, 0);
+  assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.method === "tools/call" && l.tool === "getEvents" && l.status === 401 && l.event === "skipped_unauthenticated"));
+});
+
+test("a missing or malformed token calls no Cloud and logs why", async (t) => {
+  const calls = mockCloud(t, () => assert.fail("Cloud was called"));
+  for (const [headers, reason] of [[{}, "missing"], [{ Authorization: `Basic ${TOKEN}` }, "malformed"]]) {
+    const ctx = collector();
+    const res = await worker.fetch(rpc("tools/call", { name: "getEvents", arguments: {} }, headers), ENV, ctx);
+    assert.strictEqual(res.status, 401);
+    assert.strictEqual(ctx.promises.length, 0);
+    bodies.push(await res.text());
+    assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.event === "auth_failed" && l.reason === reason), reason);
+  }
+  assert.strictEqual(calls.length, 0);
+});
+
+test("a token in a tool argument is scrubbed from the posted event", async (t) => {
+  const calls = cloudWith(t, () => jsonResponse(200, { events: [] }));
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  await c.callTool({ name: "getEvents", arguments: { search: `find ${TOKEN}` } });
+  await ctx.settle();
+  const [event] = postedEvents(calls);
+  assert.strictEqual(event.metadata.arguments.search, "find [redacted]");
+  assert.ok(!JSON.stringify(event).includes(TOKEN));
+});
+
+test("an events POST that never resolves does not delay the tool result", async (t) => {
+  cloudWith(t, () => jsonResponse(200, { events: [{ id: ITEM }] }), () => new Promise(() => {}));
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  const result = await c.callTool({ name: "getEvents", arguments: {} });
+  assert.deepStrictEqual(result.structuredContent, { events: [{ id: ITEM }] });
+  assert.strictEqual(ctx.promises.length, 1);
+});
+
+test("a rejected or 500 events POST only logs event_post_failed and never changes the result", async (t) => {
+  const calls = cloudWith(t, () => jsonResponse(200, { events: [] }), () => {
+    throw new TypeError("socket SENTINEL-RUNTIME");
+  });
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  const result = await c.callTool({ name: "getEvents", arguments: {} });
+  assert.ok(!result.isError);
+  await ctx.settle();
+  assert.strictEqual(calls.filter((x) => x.url === EVENTS).length, 1);
+  assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.event === "event_post_failed" && l.error === "TypeError" && l.tool === "getEvents"));
+
+  const answered = cloudWith(t, () => jsonResponse(200, { events: [] }), () => new Response("{}", { status: 500 }));
+  const next = collector();
+  const d = await client(t, auth, next);
+  assert.ok(!(await d.callTool({ name: "getEvents", arguments: {} })).isError);
+  await next.settle();
+  assert.strictEqual(answered.filter((x) => x.url === EVENTS).length, 1);
+  assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.event === "event_post_failed" && l.status === 500));
+});
+
+test("with no waitUntil in the context, nothing is posted", async (t) => {
+  const calls = cloudWith(t, () => jsonResponse(200, { events: [] }));
+  const c = await client(t, auth, {});
+  assert.ok(!(await c.callTool({ name: "getEvents", arguments: {} })).isError);
+  assert.strictEqual(postedEvents(calls).length, 0);
+});
+
+test("log lines carry only the fields the gateway names", () => {
   const lines = logs.map((l) => JSON.parse(l));
   assert.ok(lines.length > 0);
-  for (const line of lines) assert.deepStrictEqual(Object.keys(line).sort(), ["method", "ms", "status", "tool"]);
+  const tool = ["method", "ms", "outcome", "status", "tool"];
+  const allowed = {
+    tool_call: [...tool],
+    skipped: ["event", "method", "status", "tool"],
+    auth: ["event", "reason"],
+    post: ["event", "error", "status", "tool"],
+    invalid: ["event", "problems"],
+  };
+  for (const line of lines) {
+    const keys = Object.keys(line).sort();
+    const kind = line.method ? (line.event ? "skipped" : "tool_call") : line.event === "auth_failed" ? "auth" : line.event === "event_invalid" ? "invalid" : "post";
+    assert.ok(keys.every((k) => allowed[kind].includes(k)), `${kind}: ${keys.join(",")}`);
+  }
 });

@@ -27,8 +27,10 @@ Notes for coding agents working in this repo.
   `hosted/src/catalog.generated.json`, is written by `make hosted-generate`
   from `hosted/schemas/vendor/`: never hand-edit it. The vendored schemas
   stay byte for byte; refresh them only with `make hosted-schemas-refresh`.
-  Every tool must stay a GET: the generator refuses anything else. hosted/
-  is exempt from the local-only copy rules, never from the others.
+  Every tool must stay a GET: the generator refuses anything else. The only
+  other request is the activity event POST in `hosted/src/events.js`, sent
+  with `ctx.waitUntil` and validated against the vendored event schemas;
+  its error codes are `blowhorn-mcp-NNNN`, never reused. hosted/ is exempt from the local-only copy rules, never from the others.
 - **Tests** run behavior (execute scripts and the launcher, parse output);
   never grep source code.
 - **Project MCP server**: the repo root is the Claude Code plugin root, so

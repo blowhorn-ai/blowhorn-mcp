@@ -4,6 +4,8 @@
  * method, path and query keys all come from a catalog entry; the caller only
  * supplies values. dispatch() checks that again right before the fetch, so
  * nothing but a GET to a catalog path on the configured base ever leaves.
+ * Tool calls are still only those GETs. The one other request the Worker makes
+ * is the createEvent POST in events.js, which records the call.
  */
 import pkg from "../package.json" with { type: "json" };
 import catalog from "./catalog.generated.json" with { type: "json" };
@@ -142,35 +144,38 @@ function errorResult(text) {
 }
 
 /** `text` with every occurrence of `token` replaced, so the caller's token can never be echoed. */
-function scrub(text, token) {
+export function scrub(text, token) {
   return token ? text.split(token).join("[redacted]") : text;
 }
 
 /**
  * The MCP tool result for calling `tool` with validated `args` as the owner
- * of `token`. Every failure is a tool result with isError, never a throw.
+ * of `token`, with its `status` (0 when Cloud gave none) and `outcome`: ok,
+ * refused, timeout, unreachable, redirect, too_large, not_json, cloud_rejected
+ * (a 4xx) or cloud_failed (any other non-2xx). Every failure is a tool result
+ * with isError, never a throw.
  */
 export async function callCloud(tool, args, { base, token }) {
   try {
     return await cloudResult(await dispatch(buildRequest(tool, args, { base, token }), { base }), token);
   } catch (err) {
-    if (err instanceof GatewayError) return { result: errorResult(err.message), status: 0 };
+    if (err instanceof GatewayError) return { result: errorResult(err.message), status: 0, outcome: "refused" };
     if (err && (err.name === "TimeoutError" || err.name === "AbortError")) {
-      return { result: errorResult(`Cloud did not answer within ${TIMEOUT_MS / 1000} seconds.`), status: 0 };
+      return { result: errorResult(`Cloud did not answer within ${TIMEOUT_MS / 1000} seconds.`), status: 0, outcome: "timeout" };
     }
-    return { result: errorResult("Could not reach Cloud."), status: 0 };
+    return { result: errorResult("Could not reach Cloud."), status: 0, outcome: "unreachable" };
   }
 }
 
-/** The { result, status } for Cloud's answer `res`; reading the body may throw. */
+/** The { result, status, outcome } for Cloud's answer `res`; reading the body may throw. */
 async function cloudResult(res, token) {
   const status = res.status;
   if (res.type === "opaqueredirect" || (status >= 300 && status < 400)) {
     await res.body?.cancel();
-    return { result: errorResult(`Cloud answered ${status || "a redirect"}; redirects are not followed.`), status };
+    return { result: errorResult(`Cloud answered ${status || "a redirect"}; redirects are not followed.`), status, outcome: "redirect" };
   }
   const text = await readCapped(res);
-  if (text === null) return { result: errorResult(`Cloud's answer is larger than ${MAX_RESPONSE_BYTES / (1024 * 1024)} MB.`), status };
+  if (text === null) return { result: errorResult(`Cloud's answer is larger than ${MAX_RESPONSE_BYTES / (1024 * 1024)} MB.`), status, outcome: "too_large" };
   const body = parseJson(text);
   if (status < 200 || status >= 300) {
     let message = `Cloud answered ${status}.`;
@@ -179,13 +184,14 @@ async function cloudResult(res, token) {
       const trimmed = detail.trim();
       message += ` ${trimmed.length > MESSAGE_LIMIT ? `${trimmed.slice(0, MESSAGE_LIMIT)}...` : trimmed}`;
     }
-    return { result: errorResult(scrub(message, token)), status };
+    const outcome = status >= 400 && status < 500 ? "cloud_rejected" : "cloud_failed";
+    return { result: errorResult(scrub(message, token)), status, outcome };
   }
-  if (!body.ok) return { result: errorResult(`Cloud answered ${status} with a body that is not JSON.`), status };
+  if (!body.ok) return { result: errorResult(`Cloud answered ${status} with a body that is not JSON.`), status, outcome: "not_json" };
   const value = redact(body.value);
   const result = { content: [{ type: "text", text: scrub(JSON.stringify(value), token) }] };
   if (value && typeof value === "object" && !Array.isArray(value) && !JSON.stringify(value).includes(token)) {
     result.structuredContent = value;
   }
-  return { result, status };
+  return { result, status, outcome: "ok" };
 }

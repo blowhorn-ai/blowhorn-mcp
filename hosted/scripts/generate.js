@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /*
  * `make hosted-generate`: writes hosted/src/catalog.generated.json from the
- * vendored meshery/schemas files (scripts/catalog.js). Offline. Never
+ * vendored meshery/schemas files (scripts/catalog.js): the tools and the event
+ * schemas the gateway records calls with. Offline. Never
  * hand-edit the output; `make hosted-check` fails when it drifts.
  *
  *   node scripts/generate.js                     write src/catalog.generated.json
