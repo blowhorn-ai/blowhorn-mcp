@@ -71,7 +71,7 @@ test("the generator refuses an unresolvable $ref", () => {
   assert.match(stderr, /unresolvable \$ref/);
 });
 
-test("the vendor check fails on a file SOURCES.json does not list, and on an edited one", async () => {
+test("the vendor check fails, in every source, on a file SOURCES.json does not list and on an edited one, and on a stray folder", async () => {
   const { VENDOR, vendorProblems } = await import("../scripts/catalog.js");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "blowhorn-vendor-"));
   try {
@@ -81,9 +81,13 @@ test("the vendor check fails on a file SOURCES.json does not list, and on an edi
     fs.writeFileSync(path.join(root, "extra.yaml"), "type: string\n");
     const edited = path.join(root, "extensions", "mcp-operation.yaml");
     fs.appendFileSync(edited, "\n");
+    fs.appendFileSync(path.join(dir, "blowhorn", "schemas", "dist", "ErrorDefinition.schema.json"), "\n");
+    fs.mkdirSync(path.join(dir, "stray"));
     const problems = vendorProblems(dir).join("\n");
-    assert.match(problems, /schemas\/extra\.yaml: not listed in SOURCES\.json/);
-    assert.match(problems, /schemas\/extensions\/mcp-operation\.yaml: sha256/);
+    assert.match(problems, /meshery-schemas\/schemas\/extra\.yaml: not listed in SOURCES\.json/);
+    assert.match(problems, /meshery-schemas\/schemas\/extensions\/mcp-operation\.yaml: sha256/);
+    assert.match(problems, /blowhorn\/schemas\/dist\/ErrorDefinition\.schema\.json: sha256/);
+    assert.match(problems, /stray: not a source folder in SOURCES\.json/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

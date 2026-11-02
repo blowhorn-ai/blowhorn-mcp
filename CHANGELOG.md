@@ -20,6 +20,39 @@ launcher's, which every listing file follows.
   (`hosted/scripts/require-node.js`). Every deploy reinstalls from the
   lockfile first, so a stale `node_modules` never deploys another wrangler.
   The Worker tests still run on Node 20 (#12).
+- `hosted/`: rate limits on `/mcp` with Cloudflare's Workers Rate Limiting
+  bindings in `wrangler.jsonc`: 1200 requests a minute per network address,
+  every `/mcp` request counted, checked before authentication and shared by
+  every client behind one egress address (the only bound on a client that
+  rotates made-up tokens, so one address can still send that many requests
+  a minute that reach Cloud and are refused there with `401`), and 60 tool
+  calls a minute per caller, keyed by the hex SHA-256 of the bearer token, checked before any
+  Cloud call. Only a `tools/call` message counts per caller, one each;
+  `initialize`, notifications, `tools/list` and `ping` never do. The body
+  is parsed once and a JSON-RPC batch is refused with `400` before the
+  caller limit, so it counts nothing, and a body that does not parse is not
+  counted. Over a limit, HTTP `429` with `Retry-After` and a
+  JSON-RPC error carrying the new code `blowhorn-mcp-1010`
+  (`ErrRateLimited`), whose `data` is the code's ErrorDefinition with only
+  the refusing limit's cause, and whose `id` is the refused `tools/call`'s
+  for the caller limit and `null` for the address limit, which refuses
+  before the body is read; the request is not sent to Cloud,
+  records no activity event, and logs one `rate_limited` line without the
+  token. A binding missing from `env` lets requests through and logs one
+  `ratelimit_unbound` line per isolate naming it (#13).
+- `hosted/`: the gateway's error codes moved out of `src/events.js` into a
+  registry file, `hosted/errors/mcp.json`, in the shape of
+  blowhorn-ai/blowhorn's registry. Every definition gains a moniker,
+  severity, short and long description and reference URL, and is validated
+  by `make hosted-check` against blowhorn-ai/blowhorn's ErrorDefinition
+  construct, now vendored in `hosted/schemas/vendor/blowhorn/`, and by the
+  gateway's own rules: unique codes and monikers, `nextErrorCode` one past
+  the highest code, at least one cause per definition and one remediation
+  per cause. Events send
+  the same `metadata.error` as before; a failed call's event `description`
+  now gives its code's `shortDescription` as the reason, the only copy of
+  that text. `hosted/schemas/vendor/SOURCES.json`
+  lists one entry per pinned repo (#13).
 
 ## 0.1.1
 
