@@ -15,8 +15,7 @@
     "ALLOWED_ORIGINS": ""
   },
   // Invocation logs (Cloudflare's per-request metadata) are off, so Workers
-  // Logs holds only the explicit console lines from src/index.js: method,
-  // tool name, status and duration.
+  // Logs holds only the gateway's explicit console lines (README.md, Logs).
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,

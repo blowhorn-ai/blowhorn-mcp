@@ -11,7 +11,8 @@ repo is about.
 
 - **Read-only.** Four tools, every one a GET on the Cloud API:
   `listContentItems`, `getContentItem`, `getEvents`, `getConnections`. Every
-  tool is annotated `readOnlyHint: true`. Nothing can change anything.
+  tool is annotated `readOnlyHint: true`. No tool can change anything. The
+  one write the gateway makes is the activity event below, in your name.
 - **Your own token, every call.** Send your Blowhorn Cloud API token as
   `Authorization: Bearer <token>`. Every request must carry a Bearer token;
   Cloud validates it on each tool call. Without an `Authorization` header
@@ -40,9 +41,15 @@ repo is about.
   answer over 2 MB is refused. Values under secret-named keys (token,
   password, secret, cookie, credential, api key and so on) are replaced with
   `[redacted]`.
+- **Activity events.** Every `tools/call` is recorded as one event in your
+  Cloud activity (`POST /api/events`, with your own token). See
+  [What the gateway records](#what-the-gateway-records).
 - **Logs.** Workers Logs holds only the gateway's own lines: method, tool
-  name, status and duration. Cloudflare's invocation logs, which record
-  request metadata, are turned off in `wrangler.jsonc`.
+  name, status, outcome and duration; `auth_failed` for a missing or
+  malformed token; and the event lines in
+  [What the gateway records](#what-the-gateway-records). Cloudflare's
+  invocation logs, which record request metadata, are turned off in
+  `wrangler.jsonc`.
 - **Browsers.** A request without an `Origin` header is allowed. A request
   with one must match `ALLOWED_ORIGINS` exactly, else `403`. There is no
   wildcard CORS.
@@ -77,6 +84,43 @@ printf '{"token": "%s"}' "$TOKEN" | curl -sS -X POST https://cloud.blowhorn.ai/r
   `DELETE https://cloud.blowhorn.ai/api/identity/tokens?tokenId=<id>` with
   `Authorization: Bearer <a token you still trust>`.
 
+## What the gateway records
+
+Each `tools/call` posts one event to Cloud's createEvent API
+(`POST /api/events`) with the caller's own token, in the `organizationId`
+the call named when Cloud served the call there, else the caller's selected
+organization. It is posted with `ctx.waitUntil` alongside the tool result
+and never awaited, so it never delays or changes the result. It is never
+retried: a failed post is one `event_post_failed` log line. `initialize` and
+`tools/list` record nothing.
+
+| Field | Value |
+|-------|-------|
+| `category` / `action` | `mcp` / `tool_called` |
+| `severity` | `informational` on success; `warning` for the caller's fault (unknown tool, invalid arguments, refused request, a Cloud 4xx); `error` when Cloud or the path to it failed (5xx, timeout, unreachable, redirect, answer too large, not JSON) |
+| `description` | One sentence: the tool, and the duration or the short reason it failed |
+| `operationId` | The W3C `traceparent` trace id of the HTTP request as a UUID, else a random UUID per request |
+| `idempotencyKey` | `mcp-hosted:<uuid>`, one per call |
+| `metadata` | gateway, version, tool, outcome, httpStatus, durationMs, requestId, rpcId, the arguments with secret-named values redacted (only argument names for an unknown tool, invalid arguments, or arguments over 8 KB), and `error` on failure |
+
+`metadata.error` is a MeshKit error (meshery/schemas `MeshkitError`): the
+message shown to the caller, a code, and `probableCause` and
+`suggestedRemediation`. Codes are `blowhorn-mcp-1000` to `blowhorn-mcp-1009`,
+one per failing outcome, provisional until the structured error code registry
+allocates them. In `src/events.js` each code's remediations hang off the cause
+they answer; the flat MeshKit lists are derived from that until meshery/schemas
+ships a nested error instance (meshery/schemas#1334).
+
+Every event is validated before it is sent against the vendored
+`EventPayload`, `Event` (severity, operationId, metadata) and `MeshkitError`
+schemas, carried in the generated catalog's `events` entry; an invalid event
+is not sent and logs `event_invalid`. The caller's token is removed from
+every string in the event.
+
+Nothing is recorded in Cloud for a call with a missing or malformed token, or
+one Cloud answers `401`: there is no user to record it for. Those go only to
+Workers Logs, as `auth_failed` and `skipped_unauthenticated`.
+
 ## Where the tools come from
 
 The catalog, `src/catalog.generated.json`, is generated from the meshery/schemas
@@ -98,6 +142,7 @@ schema. Every `$ref` is inlined.
 |------|------------|
 | `src/index.js` | The Worker: routes, Origin and Bearer checks, the MCP server |
 | `src/cloud.js` | Request building, the GET-only dispatch, result shaping |
+| `src/events.js` | The activity event for each call, its validation and its POST |
 | `src/auth.js` | Bearer token parsing |
 | `src/redact.js` | Secret-named key redaction, a port of the Blowhorn engine's rule |
 | `src/catalog.generated.json` | Generated tool catalog |

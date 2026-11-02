@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 
 const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = (name) => path.join(HOSTED, "scripts", name);
@@ -100,4 +101,64 @@ test("source bounds are kept and missing ones get the defaults", () => {
   assert.strictEqual(events.search.maxLength, 1000);
   assert.strictEqual(events.pagesize.maximum, 1000000);
   assert.strictEqual(events.organizationId.maxLength, 36);
+});
+
+test("the catalog's events schemas are the vendored ones, with every $ref inlined and every x- key dropped", () => {
+  const catalog = JSON.parse(generateTo().text);
+  const vendor = path.join(HOSTED, "schemas", "vendor", "meshery-schemas", "schemas", "constructs");
+  const events = yaml.load(fs.readFileSync(path.join(vendor, "v1beta3", "event", "api.yml"), "utf8")).components.schemas;
+  const core = yaml.load(fs.readFileSync(path.join(vendor, "v1beta2", "core", "api.yml"), "utf8")).components.schemas;
+  assert.deepStrictEqual(Object.keys(catalog.events).sort(), ["error", "event", "path", "payload"]);
+  assert.strictEqual(catalog.events.path, "/api/events");
+  assert.strictEqual(catalog.events.payload.description, events.EventPayload.description);
+  assert.deepStrictEqual(Object.keys(catalog.events.payload.properties).sort(), Object.keys(events.EventPayload.properties).sort());
+  assert.deepStrictEqual(catalog.events.payload.properties.category, { type: "string", description: "The category of the event.", maxLength: 500 });
+  assert.deepStrictEqual(catalog.events.event.properties.operationId, { type: "string", format: "uuid", description: events.Event.properties.operationId.description });
+  assert.deepStrictEqual(Object.keys(catalog.events.event.properties).sort(), ["metadata", "operationId", "severity"]);
+  assert.deepStrictEqual(catalog.events.error.required, core.MeshkitError.required);
+  assert.deepStrictEqual(Object.keys(catalog.events.error.properties).sort(), Object.keys(core.MeshkitError.properties).sort());
+  assert.deepStrictEqual(catalog.events.error.properties.error, { type: "string", minLength: 1, description: core.MeshkitError.properties.error.description });
+  assert.ok(!/"\$ref"|"x-[^"]*":/.test(JSON.stringify(catalog.events)));
+});
+
+test("a vendored tree without EventPayload or MeshkitError is a CatalogError", async () => {
+  const { VENDOR, CatalogError, buildCatalog } = await import("../scripts/catalog.js");
+  const cases = [
+    ["v1beta3/event/api.yml", "EventPayload"],
+    ["v1beta2/core/api.yml", "MeshkitError"],
+  ];
+  for (const [rel, name] of cases) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "blowhorn-vendor-"));
+    try {
+      fs.cpSync(VENDOR, dir, { recursive: true });
+      const file = path.join(dir, "meshery-schemas", "schemas", "constructs", rel);
+      const text = fs.readFileSync(file, "utf8");
+      assert.ok(text.includes(`\n    ${name}:\n`), `${rel} has ${name}`);
+      fs.writeFileSync(file, text.replace(`\n    ${name}:\n`, `\n    ${name}Renamed:\n`));
+      assert.throws(() => buildCatalog({ vendor: dir }), (err) => err instanceof CatalogError && err.message.includes(`components.schemas.${name} is missing`));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a vendored tree whose createEvent is missing or not a POST is a CatalogError", async () => {
+  const { VENDOR, CatalogError, buildCatalog } = await import("../scripts/catalog.js");
+  const cases = [
+    ["      operationId: createEvent\n", "      operationId: createEventRenamed\n", "createEvent operation is missing"],
+    ["    post:\n      x-internal: [\"cloud\", \"meshery\"]\n      tags:\n      - events\n      operationId: createEvent\n", "    patch:\n      x-internal: [\"cloud\", \"meshery\"]\n      tags:\n      - events\n      operationId: createEvent\n", "PATCH /api/events (createEvent): is not a POST"],
+  ];
+  for (const [from, to, message] of cases) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "blowhorn-vendor-"));
+    try {
+      fs.cpSync(VENDOR, dir, { recursive: true });
+      const file = path.join(dir, "meshery-schemas", "schemas", "constructs", "v1beta3", "event", "api.yml");
+      const text = fs.readFileSync(file, "utf8");
+      assert.ok(text.includes(from), `event api.yml has ${JSON.stringify(from)}`);
+      fs.writeFileSync(file, text.replace(from, to));
+      assert.throws(() => buildCatalog({ vendor: dir }), (err) => err instanceof CatalogError && err.message.includes(message));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
 });
