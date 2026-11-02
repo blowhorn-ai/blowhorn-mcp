@@ -86,7 +86,8 @@ printf '{"token": "%s"}' "$TOKEN" | curl -sS -X POST https://cloud.blowhorn.ai/r
 
 Each `tools/call` posts one event to Cloud's createEvent API
 (`POST /api/events`) with the caller's own token, in the `organizationId`
-the call named, else the caller's selected organization. It is posted with
+the call named when Cloud served the call there, else the caller's selected
+organization. It is posted with
 `ctx.waitUntil` after the tool result is sent, so it never delays or changes
 the result. It is never retried: a failed post is one `event_post_failed`
 log line. `initialize` and `tools/list` record nothing.

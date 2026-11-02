@@ -124,7 +124,9 @@ function buildServer(base, events) {
       log({ method: "tools/call", tool: tool.name, status, event: "skipped_unauthenticated" });
       return result;
     }
-    const orgId = typeof args.organizationId === "string" ? args.organizationId : undefined;
+    // The named organization gets the event only when Cloud served the call there, so a caller
+    // cannot write into an organization it cannot read; any other event goes to the caller's selected one.
+    const orgId = outcome === "ok" && typeof args.organizationId === "string" ? args.organizationId : undefined;
     record(outcome, { httpStatus: status, message: result.isError ? result.content[0].text : undefined, orgId });
     return result;
   });

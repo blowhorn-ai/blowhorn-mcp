@@ -694,3 +694,14 @@ test("log lines carry only the fields the gateway names", () => {
     assert.ok(keys.every((k) => allowed[kind].includes(k)), `${kind}: ${keys.join(",")}`);
   }
 });
+
+test("a failed call naming an organization records its event without that organization's header", async (t) => {
+  const calls = cloudWith(t, () => jsonResponse(404, {}));
+  const ctx = collector();
+  const c = await client(t, auth, ctx);
+  assert.strictEqual((await c.callTool({ name: "getEvents", arguments: { organizationId: ORG } })).isError, true);
+  await ctx.settle();
+  const posts = calls.filter((x) => x.url === EVENTS);
+  assert.strictEqual(posts.length, 1);
+  assert.ok(!("X-Current-Orgid" in posts[0].init.headers));
+});
