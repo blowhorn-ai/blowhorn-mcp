@@ -44,9 +44,13 @@ repo is about.
 - **Activity events.** Every `tools/call` is recorded as one event in your
   Cloud activity (`POST /api/events`, with your own token). See
   [What the gateway records](#what-the-gateway-records).
+- **Rate limits.** 60 requests a minute per token and 300 per network
+  address; over either, `429` with `Retry-After`. See
+  [Rate limits](#rate-limits).
 - **Logs.** Workers Logs holds only the gateway's own lines: method, tool
   name, status, outcome and duration; `auth_failed` for a missing or
-  malformed token; and the event lines in
+  malformed token; `rate_limited` and `ratelimit_failed` from the
+  [rate limits](#rate-limits); and the event lines in
   [What the gateway records](#what-the-gateway-records). Cloudflare's
   invocation logs, which record request metadata, are turned off in
   `wrangler.jsonc`.
@@ -63,6 +67,73 @@ calling Cloud.
 claude mcp add --transport http blowhorn-cloud https://mcp.blowhorn.ai/mcp \
   --header "Authorization: Bearer $BLOWHORN_CLOUD_TOKEN"
 ```
+
+## Rate limits
+
+Every `/mcp` request but an `OPTIONS` preflight counts against two limits,
+Cloudflare Workers Rate Limiting bindings declared in `wrangler.jsonc`
+(`ratelimits`). `GET /healthz` is never limited.
+
+| Limit | Binding | Key | Allowed | Checked |
+|-------|---------|-----|---------|---------|
+| Per network address | `RATE_LIMIT_ADDRESS` | `CF-Connecting-IP`; an IPv6 address by its /64 | 300 requests per 60 s | First, before the token is read |
+| Per caller | `RATE_LIMIT_CALLER` | The hex SHA-256 of the bearer token, never the token | 60 requests per 60 s | Once the token parses, before any Cloud call |
+
+Every request counts, `initialize` and `tools/list` included, not only
+`tools/call`. A refused request answers HTTP `429` with
+`Retry-After: 60` (the period: the binding does not say how much of it is
+left), the usual CORS headers for an allowed `Origin`, and a JSON-RPC
+error:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": null,
+  "error": {
+    "code": -32029,
+    "message": "Too many requests: the gateway's rate limit refused this one.",
+    "data": {
+      "code": "blowhorn-mcp-1010",
+      "moniker": "ErrRateLimited",
+      "probableCauses": [
+        {
+          "id": "too-many-calls",
+          "description": "This token sent more requests than the per-minute limit, often an agent calling a tool in a loop.",
+          "remediations": [
+            { "id": "wait-retry-after", "description": "Wait the number of seconds in the Retry-After header, then send the call again." },
+            { "id": "batch-calls", "description": "Send fewer, larger calls: for example, ask for bigger pages instead of many small ones." }
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1010/",
+      "retryAfter": 60
+    }
+  }
+}
+```
+
+`data` is built from blowhorn-mcp-1010 in `errors/mcp.json`, with only the
+cause of the limit that refused: `too-many-calls` for the caller limit,
+`shared-address` for the address limit. `-32029` is in JSON-RPC's
+server-error range and echoes HTTP 429. A refused request is never sent to
+Cloud and records no activity event. It logs one line,
+`{"outcome":"rate_limited","limit":"address"}`, or for the caller limit
+`"limit":"caller"` with `"caller"` set to the first 8 hex characters of the
+token's hash, never the token or the whole hash. If a binding fails, the
+request goes through and logs `ratelimit_failed` with the error's name: the
+limits protect Cloud, they are not authentication.
+
+The limits are approximate. Cloudflare counts per location and eventually
+consistently, so a burst spread across locations can get more through, and
+a few requests over the limit can pass before refusals start.
+
+To change a limit, edit `ratelimits` in `wrangler.jsonc` and `LIMITS` in
+`src/ratelimit.js` together; `test/ratelimit.test.js` fails when they
+differ, or when either binding is missing from `wrangler.jsonc`. `period`
+is 10 or 60 seconds. `namespace_id` (`41301`, `41302`) is a string integer
+unique in the Cloudflare account: keep it when changing a limit, so the
+counters carry over. Without the bindings in `env` (unit tests that pass
+none), the limits are skipped.
 
 ## Revoke a leaked token
 
@@ -107,9 +178,9 @@ retried: a failed post is one `event_post_failed` log line. `initialize` and
 message shown to the caller, a code, and `probableCause` and
 `suggestedRemediation`. Codes are `blowhorn-mcp-1000` to `blowhorn-mcp-1009`,
 one per failing outcome, provisional until the structured error code registry
-allocates them. In `src/events.js` each code's remediations hang off the cause
-they answer; the flat MeshKit lists are derived from that until meshery/schemas
-ships a nested error instance (meshery/schemas#1334).
+(blowhorn-ai/blowhorn#1662) allocates them. The flat MeshKit lists are derived
+from the code's definition until meshery/schemas ships a nested error
+instance (meshery/schemas#1334). See [Error codes](#error-codes).
 
 Every event is validated before it is sent against the vendored
 `EventPayload`, `Event` (severity, operationId, metadata) and `MeshkitError`
@@ -120,6 +191,38 @@ every string in the event.
 Nothing is recorded in Cloud for a call with a missing or malformed token, or
 one Cloud answers `401`: there is no user to record it for. Those go only to
 Workers Logs, as `auth_failed` and `skipped_unauthenticated`.
+
+## Error codes
+
+The gateway's error codes are data, `errors/mcp.json`, in the shape of
+blowhorn-ai/blowhorn's error code registry (`component`, `nextErrorCode`,
+`definitions`). Each definition has a code, a moniker, a severity, a short
+and a long description, a reference URL, and probable causes that each
+carry the remediations that answer them. None has an `action`: only a
+person or their client can do any of them.
+
+| Code | Moniker | Outcome |
+|------|---------|---------|
+| `blowhorn-mcp-1000` | `ErrUnknownTool` | `unknown_tool` |
+| `blowhorn-mcp-1001` | `ErrInvalidArguments` | `invalid_arguments` |
+| `blowhorn-mcp-1002` | `ErrRequestRefused` | `refused` |
+| `blowhorn-mcp-1003` | `ErrCloudRejected` | `cloud_rejected` |
+| `blowhorn-mcp-1004` | `ErrCloudFailed` | `cloud_failed` |
+| `blowhorn-mcp-1005` | `ErrCloudTimeout` | `timeout` |
+| `blowhorn-mcp-1006` | `ErrCloudUnreachable` | `unreachable` |
+| `blowhorn-mcp-1007` | `ErrCloudRedirect` | `redirect` |
+| `blowhorn-mcp-1008` | `ErrResponseTooLarge` | `too_large` |
+| `blowhorn-mcp-1009` | `ErrResponseNotJson` | `not_json` |
+| `blowhorn-mcp-1010` | `ErrRateLimited` | `rate_limited`, a [429](#rate-limits), never an event |
+
+`make hosted-check` validates every definition against the vendored
+ErrorDefinition construct (`schemas/vendor/blowhorn/`) and checks what the
+construct cannot: codes unique and below `nextErrorCode`, the reference URL,
+no empty cause or remediation list, no `approvalPolicy` without an `action`
+(`scripts/registry.js`). `src/errors.js` maps each outcome to its code and
+refuses to load if one has no definition. To add a code: add its definition
+with the number in `nextErrorCode`, bump `nextErrorCode`, then map its
+outcome in `src/errors.js`. Numbers are never reused.
 
 ## Where the tools come from
 
@@ -132,23 +235,30 @@ schema. Every `$ref` is inlined.
 
 - `make hosted-generate`: rewrite the catalog. Never hand-edit it.
 - `make hosted-schemas-refresh`: re-download the vendored files (network);
-  change the pin in `scripts/schemas-refresh.js` first.
-- `make hosted-check`: vendor sha256, files missing from `SOURCES.json` and
-  catalog drift, then the tests. `make check` at the repo root runs it.
+  change the pin in `SOURCES` in `scripts/schemas-refresh.js` first. It also
+  vendors `ErrorDefinition.schema.json` from blowhorn-ai/blowhorn into
+  `schemas/vendor/blowhorn/`; that repo is private, so run it with a GitHub
+  token: `GITHUB_TOKEN=$(gh auth token) make hosted-schemas-refresh`.
+- `make hosted-check`: vendor sha256, files missing from `SOURCES.json`,
+  catalog drift and the error registry, then the tests. `make check` at the
+  repo root runs it.
 
 ## Layout
 
 | Path | What it is |
 |------|------------|
-| `src/index.js` | The Worker: routes, Origin and Bearer checks, the MCP server |
+| `src/index.js` | The Worker: routes, Origin and Bearer checks, rate limits, the MCP server |
 | `src/cloud.js` | Request building, the GET-only dispatch, result shaping |
 | `src/events.js` | The activity event for each call, its validation and its POST |
+| `src/errors.js` | Each failing outcome's code in `errors/mcp.json` |
+| `src/ratelimit.js` | The rate limits, their keys and the 429 |
+| `errors/mcp.json` | The error code registry |
 | `src/auth.js` | Bearer token parsing |
 | `src/redact.js` | Secret-named key redaction, a port of the Blowhorn engine's rule |
 | `src/catalog.generated.json` | Generated tool catalog |
-| `scripts/` | generate, check-drift, schemas-refresh, require-node (the deploy's Node check) |
+| `scripts/` | generate, check-drift, schemas-refresh, registry (the error registry check), require-node (the deploy's Node check) |
 | `test/` | Behavior tests (`node --test`) |
-| `wrangler.jsonc` | Worker config |
+| `wrangler.jsonc` | Worker config, the rate limits included |
 | `.nvmrc` | The Node major the deploy needs (22) |
 
 ## Configuration

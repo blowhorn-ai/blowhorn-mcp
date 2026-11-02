@@ -10,8 +10,10 @@
  * token, sent as a Bearer header, and nothing is stored. Every request must
  * carry a Bearer token; Cloud validates it on each tool call. Each call is then
  * recorded as an event in the caller's Cloud activity (src/events.js), posted
- * alongside the response with ctx.waitUntil and never awaited. There is no SSE
- * stream, no session and no JSON-RPC batch.
+ * alongside the response with ctx.waitUntil and never awaited. Every /mcp
+ * request but a preflight passes a per-address rate limit first, and one with
+ * a token a per-caller limit before Cloud is called (src/ratelimit.js). There
+ * is no SSE stream, no session and no JSON-RPC batch.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -22,6 +24,7 @@ import { Validator } from "@cfworker/json-schema";
 import { bearerToken } from "./auth.js";
 import { TOOLS, VERSION, callCloud, cloudBase } from "./cloud.js";
 import { operationId, postEvent, toolEvent } from "./events.js";
+import { addressKey, callerKey, refusal, refuses } from "./ratelimit.js";
 
 // Module-private: Workers treat every named export of the main module as an entrypoint.
 const NAME = "blowhorn-mcp-hosted";
@@ -53,7 +56,7 @@ function corsHeaders(origin) {
   if (!origin) return {};
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Expose-Headers": "Mcp-Protocol-Version, WWW-Authenticate",
+    "Access-Control-Expose-Headers": "Mcp-Protocol-Version, WWW-Authenticate, Retry-After",
     Vary: "Origin",
   };
 }
@@ -147,6 +150,11 @@ async function mcp(request, env, origin, events) {
       },
     });
   }
+  // Before anything else, so an unauthenticated flood is cut off before any auth work or Cloud call.
+  if (await refuses(env, "address", addressKey(request.headers.get("CF-Connecting-IP")))) {
+    log({ outcome: "rate_limited", limit: "address" });
+    return refusal("address", cors);
+  }
   if (request.method !== "POST") return rpcError(405, -32000, "Method not allowed: this stateless gateway answers POST only.", { Allow: "POST", ...cors });
 
   const header = request.headers.get("Authorization");
@@ -162,6 +170,13 @@ async function mcp(request, env, origin, events) {
       "Unauthorized: send your own Blowhorn Cloud API token as an Authorization: Bearer <token> header.",
       { "WWW-Authenticate": challenge, ...cors },
     );
+  }
+
+  // Keyed by the token's hash, never the token; nothing is sent to Cloud or recorded for a refused request.
+  const caller = await callerKey(token);
+  if (await refuses(env, "caller", caller)) {
+    log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
+    return refusal("caller", cors);
   }
 
   const base = cloudBase(env);
