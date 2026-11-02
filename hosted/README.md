@@ -79,7 +79,11 @@ preflight are never limited.
 | Per caller | `RATE_LIMIT_CALLER` | The hex SHA-256 of the bearer token, never the token | 60 tool calls per 60 s | Once the token parses, before any Cloud call; only `tools/call` counts |
 
 The address limit counts every `/mcp` request, with or without a token: it
-is the only bound on a client that rotates through made-up tokens. It is
+is the only bound on a client that rotates through made-up tokens, since
+each new token gets its own caller bucket. So one address can still send as
+many requests a minute as the address limit allows (the table above) that
+reach Cloud and are refused there with `401`; the address limit caps that
+flood, it does not cut it off before any work. It is
 shared by everyone behind one egress address, so clients behind one NAT,
 VPN or CI runner pool count together, and a hosted MCP client that calls
 from its provider's shared addresses could reach it while each of its users
@@ -99,12 +103,14 @@ that does not parse counts nothing and gets the usual `-32700` parse error.
 A refused request answers HTTP
 `429` with `Retry-After` set to the limit's period (the binding does not
 say how much of it is left), the usual CORS headers for an allowed
-`Origin`, and a JSON-RPC error:
+`Origin`, and a JSON-RPC error. The caller limit's `429` answers the
+refused `tools/call`'s `id`, as below; the address limit's answers `id`
+`null`, since it refuses before the body is read:
 
 ```json
 {
   "jsonrpc": "2.0",
-  "id": null,
+  "id": 1,
   "error": {
     "code": -32029,
     "message": "Too many requests: the gateway's rate limit refused this one.",

@@ -151,7 +151,8 @@ async function mcp(request, env, origin, events) {
       },
     });
   }
-  // Before anything else, so an unauthenticated flood is cut off before any auth work or Cloud call.
+  // Before anything else, so a refused request gets no auth work or Cloud call. Its 429
+  // answers id null: the body is not read yet.
   if (await refuses(env, "address", addressKey(request.headers.get("CF-Connecting-IP")))) {
     log({ outcome: "rate_limited", limit: "address" });
     return refusal("address", cors);
@@ -193,7 +194,7 @@ async function mcp(request, env, origin, events) {
     const caller = await callerKey(token);
     if (await refuses(env, "caller", caller)) {
       log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
-      return refusal("caller", cors);
+      return refusal("caller", cors, parsedBody.id);
     }
   }
 

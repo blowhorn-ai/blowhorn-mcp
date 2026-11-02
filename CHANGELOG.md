@@ -23,8 +23,10 @@ launcher's, which every listing file follows.
 - `hosted/`: rate limits on `/mcp` with Cloudflare's Workers Rate Limiting
   bindings in `wrangler.jsonc`: 1200 requests a minute per network address,
   every `/mcp` request counted, checked before authentication and shared by
-  every client behind one egress address, and 60 tool calls a minute per
-  caller, keyed by the hex SHA-256 of the bearer token, checked before any
+  every client behind one egress address (the only bound on a client that
+  rotates made-up tokens, so one address can still send that many requests
+  a minute that reach Cloud and are refused there with `401`), and 60 tool
+  calls a minute per caller, keyed by the hex SHA-256 of the bearer token, checked before any
   Cloud call. Only a `tools/call` message counts per caller, one each;
   `initialize`, notifications, `tools/list` and `ping` never do. The body
   is parsed once and a JSON-RPC batch is refused with `400` before the
@@ -32,7 +34,9 @@ launcher's, which every listing file follows.
   counted. Over a limit, HTTP `429` with `Retry-After` and a
   JSON-RPC error carrying the new code `blowhorn-mcp-1010`
   (`ErrRateLimited`), whose `data` is the code's ErrorDefinition with only
-  the refusing limit's cause; the request is not sent to Cloud,
+  the refusing limit's cause, and whose `id` is the refused `tools/call`'s
+  for the caller limit and `null` for the address limit, which refuses
+  before the body is read; the request is not sent to Cloud,
   records no activity event, and logs one `rate_limited` line without the
   token. A binding missing from `env` lets requests through and logs one
   `ratelimit_unbound` line per isolate naming it (#13).

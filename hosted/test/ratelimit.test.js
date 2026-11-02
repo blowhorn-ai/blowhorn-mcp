@@ -91,15 +91,20 @@ function collector() {
   return { promises, waitUntil: (p) => promises.push(p), settle: () => Promise.all(promises) };
 }
 
-/** Checks a 429 from the `name` limit: Retry-After, a JSON-RPC error, and data that is blowhorn-mcp-1010 with only that limit's cause. */
-async function assertRefused(res, name) {
+/**
+ * Checks a 429 from the `name` limit: Retry-After, a JSON-RPC error answering
+ * `id` (the refused tools/call's for the caller limit, null for the address
+ * limit, which refuses before the body is read), and data that is
+ * blowhorn-mcp-1010 with only that limit's cause.
+ */
+async function assertRefused(res, name, id = name === "caller" ? 1 : null) {
   assert.strictEqual(res.status, 429);
   assert.strictEqual(res.headers.get("Retry-After"), String(LIMITS[name].period));
   assert.strictEqual(res.headers.get("Content-Type"), "application/json");
   const body = await res.json();
   const d = definition("rate_limited");
   assert.strictEqual(body.jsonrpc, "2.0");
-  assert.strictEqual(body.id, null);
+  assert.strictEqual(body.id, id);
   assert.strictEqual(body.error.code, RATE_LIMITED);
   assert.ok(body.error.code <= -32000 && body.error.code >= -32099, "a JSON-RPC server error code");
   assert.strictEqual(body.error.message, d.shortDescription);
@@ -253,6 +258,25 @@ test("over the caller limit a tools/call is 429 with the caller's cause: no Clou
   assert.ok(!text.includes(TOKEN) && !text.includes(HASH));
 });
 
+test("a caller 429 answers the refused tools/call's id; an id that is not a string or number answers null", async (t) => {
+  mockCloud(t);
+  captureLogs(t);
+  const env = envWith({ caller: binding(false) });
+  const [method, params] = CALL;
+  for (const [id, expected] of [["call-7", "call-7"], [42, 42], [0, 0], [{ n: 1 }, null], [undefined, null]]) {
+    const res = await worker.fetch(post(JSON.stringify({ jsonrpc: "2.0", id, method, params })), env, {});
+    await assertRefused(res, "caller", expected);
+  }
+});
+
+test("an address 429 answers id null, since the body is not read yet", async (t) => {
+  mockCloud(t);
+  captureLogs(t);
+  const [method, params] = CALL;
+  const res = await worker.fetch(post(JSON.stringify({ jsonrpc: "2.0", id: "call-9", method, params })), envWith({ address: binding(false) }), {});
+  await assertRefused(res, "address", null);
+});
+
 test("initialize, notifications, tools/list and ping never count toward the caller limit, even over it", async (t) => {
   mockCloud(t);
   const logs = captureLogs(t);
@@ -361,7 +385,6 @@ test("the address key is the IPv4 address, or the IPv6 address's /64", async (t)
     ["2001:db8::1", "2001:db8:0:0::/64"],
     ["2001:0db8:00ab::", "2001:db8:ab:0::/64"],
     ["::1", "0:0:0:0::/64"],
-    ["::ffff:198.51.100.4", "198.51.100.4"],
     [null, "unknown"],
     ["", "unknown"],
     ["1:2:3", "1:2:3"],

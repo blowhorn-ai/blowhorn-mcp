@@ -35,11 +35,14 @@
       "simple": { "limit": 60, "period": 60 }
     },
     // Per network address: keyed by CF-Connecting-IP (an IPv6 address by its
-    // /64). Checked before authentication on every /mcp request, so an
-    // unauthenticated flood (or one rotating garbage tokens) is cut off before
-    // any work. Everyone behind one egress address shares it, so it sits well
-    // above the caller limit times the about 4 requests a stateless client
-    // sends per tool call, leaving room for several such clients behind one NAT.
+    // /64). Checked before authentication on every /mcp request; a request it
+    // refuses gets no auth work and no Cloud call. It is the only bound on a
+    // client that rotates made-up tokens, since each new token gets its own
+    // caller bucket: one address can still send up to 1200 requests a minute
+    // that reach Cloud and are refused there with 401. Everyone behind one
+    // egress address shares it, so it sits well above the caller limit times
+    // the about 4 requests a stateless client sends per tool call, leaving
+    // room for several such clients behind one NAT.
     {
       "name": "RATE_LIMIT_ADDRESS",
       "namespace_id": "41302",

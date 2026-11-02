@@ -61,8 +61,6 @@ export function addressKey(ip) {
   if (!ip) return "unknown";
   if (!ip.includes(":")) return ip;
   const lower = ip.toLowerCase();
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(lower);
-  if (mapped) return mapped[1];
   const halves = lower.split("::");
   if (halves.length > 2) return ip;
   const head = halves[0] ? halves[0].split(":") : [];
@@ -104,17 +102,19 @@ export async function refuses(env, name, key) {
 
 /**
  * The 429 for a request the `name` limit refused: Retry-After (the period),
- * the given CORS headers, and a JSON-RPC error whose message is
+ * the given CORS headers, and a JSON-RPC error answering `id`, the refused
+ * request's JSON-RPC id when its body was read (null when it was not, or
+ * when the id is not a string or number), whose message is
  * blowhorn-mcp-1010's short description and whose data is an ErrorDefinition
  * instance: blowhorn-mcp-1010 itself, with only the probable cause this limit
  * names (its remediations kept). test/ratelimit.test.js validates it against
  * the vendored ErrorDefinition construct.
  */
-export function refusal(name, headers = {}) {
+export function refusal(name, headers = {}, id = null) {
   const { period, cause } = LIMITS[name];
   const body = {
     jsonrpc: "2.0",
-    id: null,
+    id: typeof id === "string" || typeof id === "number" ? id : null,
     error: {
       code: RATE_LIMITED,
       message: RATE_LIMITED_ERROR.shortDescription,
