@@ -16,7 +16,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import yaml from "js-yaml";
+import { load } from "js-yaml";
 
 const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const VENDOR = path.join(HOSTED, "schemas", "vendor");
@@ -86,7 +86,7 @@ async function refresh({ repo, ref, sourcePr, dir, roots }) {
     seen.add(file);
     if (file.startsWith("..")) throw new Error(`${repo} ${file}: $ref leaves the repo`);
     const bytes = await download(repo, ref, file);
-    const doc = yaml.load(bytes.toString("utf8"));
+    const doc = load(bytes.toString("utf8"));
     const dest = path.join(VENDOR, dir, file);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, bytes);
