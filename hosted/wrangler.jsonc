@@ -10,6 +10,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  // Wrangler's anonymous usage telemetry is off for every deploy from here.
+  "send_metrics": false,
   "vars": {
     "CLOUD_API_BASE": "https://cloud.blowhorn.ai",
     "ALLOWED_ORIGINS": ""
