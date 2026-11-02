@@ -16,7 +16,9 @@ launcher's, which every listing file follows.
 - `hosted/`: wrangler 4.156.0 is a locked devDependency, and
   `make hosted-deploy` runs it from `hosted/node_modules` instead of
   `npx --yes wrangler@4.156.0`. Deploying needs Node 22 (`hosted/.nvmrc`);
-  on an older Node the Makefile stops with one sentence naming the version.
+  on an older Node the Makefile stops with one sentence naming the version
+  (`hosted/scripts/require-node.js`). Every deploy reinstalls from the
+  lockfile first, so a stale `node_modules` never deploys another wrangler.
   The Worker tests still run on Node 20 (#12).
 
 ## 0.1.1

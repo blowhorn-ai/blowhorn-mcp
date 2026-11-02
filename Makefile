@@ -93,19 +93,20 @@ hosted-schemas-refresh: hosted/node_modules/@modelcontextprotocol/sdk/package.js
 	node hosted/scripts/schemas-refresh.js
 	$(MAKE) hosted-generate
 
-hosted/node_modules/wrangler/package.json:
-	$(MAKE) hosted-install
-
 ## hosted-require-node: refuse unless Node is at least the major in
 ## hosted/.nvmrc, which is what the locked wrangler needs. Every target that
-## runs wrangler depends on it first.
+## runs wrangler depends on it first. The logic is hosted/scripts/require-node.js.
 hosted-require-node:
-	@node -e 'const want = Number(require("fs").readFileSync("hosted/.nvmrc", "utf8").trim()); if (!Number.isInteger(want)) { console.error("$@: hosted/.nvmrc must hold one Node major version, like 22."); process.exit(1); } const have = process.versions.node; if (Number(have.split(".")[0]) < want) { console.error("$@: wrangler needs Node " + want + " or later (hosted/.nvmrc), but this is Node " + have + "."); process.exit(1); }'
+	@node hosted/scripts/require-node.js
 
 ## hosted-deploy: deploy the interim gateway Worker with the locked wrangler in
-## hosted/node_modules, never a download. Run from the VM only; needs
+## hosted/node_modules, never a download. It always reinstalls from
+## hosted/package-lock.json first, so a node_modules left from before a lock
+## bump never deploys another wrangler. Run from the VM only; needs
 ## CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the environment.
-hosted-deploy: hosted-require-node hosted/node_modules/wrangler/package.json hosted-check
+hosted-deploy: hosted-require-node
+	$(MAKE) hosted-install
+	$(MAKE) hosted-check
 	cd hosted && ./node_modules/.bin/wrangler deploy
 
 ## release: tag $(TAG) on master and create its GitHub release. The Gemini
