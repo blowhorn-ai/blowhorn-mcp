@@ -6,8 +6,13 @@ marketplace listing file for it. The MCP server itself ships inside the
 Blowhorn desktop app and runs locally on your Mac over stdio, so its tools
 always match the Blowhorn you have installed.
 
-- **One tool per Blowhorn command**: 113 tools in Blowhorn 1.61.0, grouped
-  Act, Manage, Connect, Run, Observe and Meta.
+- **One tool per Blowhorn command**, grouped Act, Manage, Connect, Run,
+  Observe and Meta. From Blowhorn 1.62.0, five risky tools are hidden by
+  default because each removes or replaces your install or signs you out:
+  `uninstall`, `service_uninstall`, `auth_logout`, `desktop_build` and
+  `desktop_install`. To serve one, name it with `--allow-hidden-tool`
+  (repeatable) or in `BLOWHORN_MCP_ALLOW_HIDDEN_TOOLS`; see
+  [Hidden tools](https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/#hidden-tools).
 - **Dry run first**: reads run as asked. Every state change runs as a dry
   run unless the call confirms it.
 - **Approval mode applies**: when it is on, work an agent confirms waits for

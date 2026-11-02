@@ -7,8 +7,11 @@ description: Use when the user wants to draft, queue, schedule or check social m
 
 Blowhorn is an AI-native social media manager for macOS. Its MCP server ships
 inside the Blowhorn desktop app and runs locally on the user's Mac over stdio.
-It exposes one tool per Blowhorn command. Use this skill to drive those tools
-safely on the user's behalf.
+It exposes one tool per Blowhorn command, except five risky ones that are
+hidden by default (`uninstall`, `service_uninstall`, `auth_logout`,
+`desktop_build` and `desktop_install`); the user opts in to one by name with
+`--allow-hidden-tool`. Use this skill to drive those tools safely on the
+user's behalf.
 
 ## How to work
 
