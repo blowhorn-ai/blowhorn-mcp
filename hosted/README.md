@@ -98,7 +98,7 @@ log line. `initialize` and `tools/list` record nothing.
 | `description` | One sentence: the tool, and the duration or the short reason it failed |
 | `operationId` | The W3C `traceparent` trace id of the HTTP request as a UUID, else a random UUID per request |
 | `idempotencyKey` | `mcp-hosted:<uuid>`, one per call |
-| `metadata` | gateway, version, tool, outcome, httpStatus, durationMs, requestId, rpcId, the arguments with secret-named values redacted (only argument names for an unknown tool or invalid arguments), and `error` on failure |
+| `metadata` | gateway, version, tool, outcome, httpStatus, durationMs, requestId, rpcId, the arguments with secret-named values redacted (only argument names for an unknown tool, invalid arguments, or arguments over 8 KB), and `error` on failure |
 
 `metadata.error` is a MeshKit error (meshery/schemas `MeshkitError`): the
 message shown to the caller, a code, and `probableCause` and

@@ -22,6 +22,8 @@ const POST_TIMEOUT_MS = 10_000;
 const MAX_NAME_CHARS = 100;
 const MAX_NAMES = 50;
 const MAX_ERROR_CHARS = 1000;
+/** Redacted arguments over this many bytes of JSON are recorded by name only, so the event stays small. */
+const MAX_ARGUMENT_BYTES = 8 * 1024;
 const TRACEPARENT = /^([0-9a-f]{2})-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/;
 const NAME_ONLY = ["invalid_arguments", "unknown_tool"];
 
@@ -60,7 +62,7 @@ const SEVERITY = Object.freeze({
 /*
  * One definition per failing outcome, in the shape of
  * internal/design/structured-error-codes.md in blowhorn-ai/blowhorn: a code
- * (`blowhorn-mcp-NNNN`), a moniker, and probable causes that each carry their
+ * (`blowhorn-mcp-NNNN`) and probable causes that each carry their
  * own remediations, so a fix always names the cause it answers. The codes are
  * provisional until that design's registry (blowhorn-ai/blowhorn#1662)
  * allocates them. On the wire metadata.error is the released MeshKit shape
@@ -74,7 +76,6 @@ const SUPPORT = { id: "contact-support", description: "If it keeps failing, cont
 const FAILURES = Object.freeze({
   unknown_tool: {
     code: "blowhorn-mcp-1000",
-    moniker: "ErrUnknownTool",
     reason: "the tool is not one this gateway offers.",
     causes: [
       { id: "tool-not-offered", description: "The client asked for a tool this gateway does not offer, or mistyped its name.", remediations: [{ id: "list-tools", description: "Ask for the tool list again and use one of the names it returns." }] },
@@ -82,7 +83,6 @@ const FAILURES = Object.freeze({
   },
   invalid_arguments: {
     code: "blowhorn-mcp-1001",
-    moniker: "ErrInvalidArguments",
     reason: "the arguments did not match the tool's input schema.",
     causes: [
       { id: "argument-mismatch", description: "An argument is missing, unknown, or of the wrong type or size.", remediations: [{ id: "fix-arguments", description: "Check the argument names and limits in the tool list, then send the call again." }] },
@@ -90,7 +90,6 @@ const FAILURES = Object.freeze({
   },
   refused: {
     code: "blowhorn-mcp-1002",
-    moniker: "ErrRequestRefused",
     reason: "the gateway refused to send the request.",
     causes: [
       { id: "bad-path-value", description: "A path value is not a single valid segment.", remediations: [{ id: "one-resource", description: "Send a value that names one resource." }] },
@@ -99,7 +98,6 @@ const FAILURES = Object.freeze({
   },
   cloud_rejected: {
     code: "blowhorn-mcp-1003",
-    moniker: "ErrCloudRejected",
     reason: "Cloud answered with a client error.",
     causes: [
       { id: "not-found", description: "The identifier does not exist.", remediations: [{ id: "check-identifiers", description: "Check the identifiers in the call." }] },
@@ -108,13 +106,11 @@ const FAILURES = Object.freeze({
   },
   cloud_failed: {
     code: "blowhorn-mcp-1004",
-    moniker: "ErrCloudFailed",
     reason: "Cloud answered with a server error.",
     causes: [{ id: "cloud-error", description: "Blowhorn Cloud had a problem handling the request.", remediations: [AGAIN, SUPPORT] }],
   },
   timeout: {
     code: "blowhorn-mcp-1005",
-    moniker: "ErrCloudTimeout",
     reason: "Cloud did not answer in time.",
     causes: [
       { id: "cloud-slow", description: "Blowhorn Cloud was slow to answer.", remediations: [AGAIN] },
@@ -123,25 +119,21 @@ const FAILURES = Object.freeze({
   },
   unreachable: {
     code: "blowhorn-mcp-1006",
-    moniker: "ErrCloudUnreachable",
     reason: "the gateway could not reach Cloud.",
     causes: [{ id: "cloud-unavailable", description: "Blowhorn Cloud or the network between it and the gateway was unavailable.", remediations: [AGAIN] }],
   },
   redirect: {
     code: "blowhorn-mcp-1007",
-    moniker: "ErrCloudRedirect",
     reason: "Cloud answered with a redirect, which the gateway does not follow.",
     causes: [{ id: "endpoint-moved", description: "Blowhorn Cloud moved the endpoint, or a proxy in front of it redirected the call.", remediations: [AGAIN, SUPPORT] }],
   },
   too_large: {
     code: "blowhorn-mcp-1008",
-    moniker: "ErrCloudAnswerTooLarge",
     reason: "Cloud's answer was too large to return.",
     causes: [{ id: "too-much-data", description: "The call matched more data than the gateway returns in one answer.", remediations: [{ id: "narrow-call", description: "Ask for a smaller page of results, or add filters to narrow the call." }] }],
   },
   not_json: {
     code: "blowhorn-mcp-1009",
-    moniker: "ErrCloudAnswerNotJson",
     reason: "Cloud's answer was not JSON.",
     causes: [{ id: "unexpected-body", description: "Blowhorn Cloud answered with an unexpected body, or a proxy answered in its place.", remediations: [AGAIN, SUPPORT] }],
   },
@@ -202,10 +194,11 @@ export function toolEvent({ tool, outcome, httpStatus = 0, durationMs, requestId
     requestId,
     rpcId: typeof rpcId === "string" || typeof rpcId === "number" ? rpcId : null,
   };
-  if (NAME_ONLY.includes(outcome)) {
-    metadata.argumentNames = Object.keys(args).slice(0, MAX_NAMES).map((k) => k.slice(0, MAX_NAME_CHARS));
+  const redacted = NAME_ONLY.includes(outcome) ? null : redact(args);
+  if (redacted && new TextEncoder().encode(JSON.stringify(redacted)).length <= MAX_ARGUMENT_BYTES) {
+    metadata.arguments = redacted;
   } else {
-    metadata.arguments = redact(args);
+    metadata.argumentNames = Object.keys(args).slice(0, MAX_NAMES).map((k) => k.slice(0, MAX_NAME_CHARS));
   }
   if (outcome !== "ok") {
     const failure = FAILURES[outcome];

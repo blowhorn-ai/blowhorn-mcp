@@ -243,3 +243,10 @@ test("every failing outcome has its own blowhorn-mcp code, and every listed reme
     assert.strictEqual(new Set(error.suggestedRemediation).size, error.suggestedRemediation.length, outcome);
   }
 });
+
+test("arguments too large to record are recorded by name only, and the event still validates", () => {
+  const event = eventFor("refused", { args: { search: "x".repeat(9000), page: 1 } });
+  assert.strictEqual(event.metadata.arguments, undefined);
+  assert.deepStrictEqual(event.metadata.argumentNames, ["search", "page"]);
+  assert.deepStrictEqual(eventProblems(event), []);
+});
