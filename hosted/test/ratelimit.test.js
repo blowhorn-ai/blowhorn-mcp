@@ -163,6 +163,8 @@ test("wrangler.jsonc declares every LIMITS binding with its period, a positive i
   assert.strictEqual(new Set(namespaces).size, namespaces.length, "every namespace_id is distinct");
   const limit = (name) => ratelimits.find((r) => r.name === LIMITS[name].binding).simple.limit;
   assert.ok(limit("address") > limit("caller"), "the address limit is the looser one");
+  // A stateless client sends about 4 requests per tool call (initialize, initialized, a GET, tools/call).
+  assert.ok(limit("address") >= 4 * 4 * limit("caller"), "the address limit holds 4 stateless clients at the caller limit");
 });
 
 test("README.md's Rate limits table states the limits wrangler.jsonc declares", () => {
@@ -264,19 +266,25 @@ test("initialize, notifications, tools/list and ping never count toward the call
   assert.ok(!logs.some((l) => l.outcome === "rate_limited"));
 });
 
-test("each tools/call counts once, and each tools/call in a JSON array once before the batch is refused", async (t) => {
-  mockCloudOk(t);
+test("a tools/call counts once, and a batch of tools/call messages is refused as a batch without counting", async (t) => {
+  const calls = mockCloudOk(t);
   captureLogs(t);
-  const caller = binding();
+  const caller = binding((n) => n <= 60);
   const env = envWith({ caller });
   assert.strictEqual((await worker.fetch(rpc(...CALL), env, collector())).status, 200);
   assert.strictEqual(caller.keys.length, 1);
+  const cloudCalls = calls.length;
   const [method, params] = CALL;
-  const batch = post(JSON.stringify([{ jsonrpc: "2.0", id: 1, method, params }, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { jsonrpc: "2.0", id: 3, method, params }]));
+  const batch = post(JSON.stringify(Array.from({ length: 61 }, (_, i) => ({ jsonrpc: "2.0", id: i + 1, method, params }))));
   const res = await worker.fetch(batch, env, {});
   assert.strictEqual(res.status, 400);
-  assert.strictEqual((await res.json()).error.code, -32600);
-  assert.strictEqual(caller.keys.length, 3);
+  const { error } = await res.json();
+  assert.strictEqual(error.code, -32600);
+  assert.match(error.message, /batch/i);
+  assert.strictEqual(caller.keys.length, 1, "the batch spent none of the caller's calls");
+  assert.strictEqual(calls.length, cloudCalls, "nor reached Cloud");
+  assert.strictEqual((await worker.fetch(rpc(...CALL), env, collector())).status, 200);
+  assert.strictEqual(caller.keys.length, 2);
 });
 
 test("a body that does not parse is not counted and gets the gateway's usual parse error", async (t) => {

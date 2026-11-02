@@ -4,15 +4,15 @@
  * Rate Limiting bindings declared in wrangler.jsonc (`ratelimits`), so a
  * runaway client cannot flood Blowhorn Cloud or the activity feed through
  * the gateway. index.js checks the address limit on every /mcp request but a
- * preflight, before anything else, and the caller limit once a bearer token
- * is parsed, before any Cloud call, counting only tools/call messages
- * (toolCalls). A refused request answers 429 with blowhorn-mcp-1010 from
- * errors/mcp.json, and is neither sent to Cloud nor recorded as an event.
+ * preflight, before anything else, and the caller limit once the token and
+ * the body parse and a batch is refused, before any Cloud call, counting one
+ * for a tools/call message and nothing for any other. A refused request
+ * answers 429 with blowhorn-mcp-1010 from errors/mcp.json, and is neither
+ * sent to Cloud nor recorded as an event.
  *
  * The counters are per Cloudflare location and eventually consistent, so the
  * limits are approximate: a burst spread across locations can pass more.
  */
-import { readRequestBody } from "@modelcontextprotocol/sdk/server/requestBody.js";
 import { definition } from "./errors.js";
 
 /**
@@ -72,26 +72,6 @@ export function addressKey(ip) {
   const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill("0"), ...tail];
   if (!groups.every((g) => HEXTET.test(g))) return ip;
   return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":")}::/64`;
-}
-
-/**
- * How many tools/call messages `request`'s JSON-RPC body holds, the caller
- * limit's count: 1 for a tools/call message, one per tools/call element of a
- * JSON array, 0 for any other method. The body is read from a clone, so the
- * original is left for index.js and the SDK. A body over `maxBytes`, one that
- * does not parse, or one whose read fails counts 0: index.js reads the
- * original next and answers it as it does any such body (413 or -32700).
- */
-export async function toolCalls(request, maxBytes) {
-  let parsed;
-  try {
-    const body = await readRequestBody(request.clone(), maxBytes);
-    if (body.tooLarge) return 0;
-    parsed = JSON.parse(body.text);
-  } catch {
-    return 0;
-  }
-  return (Array.isArray(parsed) ? parsed : [parsed]).filter((m) => m?.method === "tools/call").length;
 }
 
 /**

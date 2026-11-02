@@ -35,12 +35,15 @@
       "simple": { "limit": 60, "period": 60 }
     },
     // Per network address: keyed by CF-Connecting-IP (an IPv6 address by its
-    // /64). Looser, and checked before authentication, so an unauthenticated
-    // flood is cut off before any work.
+    // /64). Checked before authentication on every /mcp request, so an
+    // unauthenticated flood (or one rotating garbage tokens) is cut off before
+    // any work. Everyone behind one egress address shares it, so it sits well
+    // above the caller limit times the about 4 requests a stateless client
+    // sends per tool call, leaving room for several such clients behind one NAT.
     {
       "name": "RATE_LIMIT_ADDRESS",
       "namespace_id": "41302",
-      "simple": { "limit": 300, "period": 60 }
+      "simple": { "limit": 1200, "period": 60 }
     }
   ],
   // Invocation logs (Cloudflare's per-request metadata) are off, so Workers

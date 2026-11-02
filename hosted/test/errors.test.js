@@ -61,7 +61,7 @@ test("the codes, causes and remediation ids that predate the registry file are k
     "blowhorn-mcp-1007": [["endpoint-moved", ["try-again", "contact-support"]]],
     "blowhorn-mcp-1008": [["too-much-data", ["narrow-call"]]],
     "blowhorn-mcp-1009": [["unexpected-body", ["try-again", "contact-support"]]],
-    "blowhorn-mcp-1010": [["too-many-calls", ["wait-retry-after", "batch-calls"]], ["shared-address", ["authenticate", "wait-retry-after"]]],
+    "blowhorn-mcp-1010": [["too-many-calls", ["wait-retry-after", "batch-calls"]], ["shared-address", ["wait-retry-after", "fewer-requests-from-address"]]],
   });
 });
 

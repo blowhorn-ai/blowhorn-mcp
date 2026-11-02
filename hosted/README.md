@@ -75,17 +75,28 @@ preflight are never limited.
 
 | Limit | Binding | Key | Allowed | Checked |
 |-------|---------|-----|---------|---------|
-| Per network address | `RATE_LIMIT_ADDRESS` | `CF-Connecting-IP`; an IPv6 address by its /64 | 300 requests per 60 s | First, on every `/mcp` request, before the token is read |
+| Per network address | `RATE_LIMIT_ADDRESS` | `CF-Connecting-IP`; an IPv6 address by its /64 | 1200 requests per 60 s | First, on every `/mcp` request, before the token is read |
 | Per caller | `RATE_LIMIT_CALLER` | The hex SHA-256 of the bearer token, never the token | 60 tool calls per 60 s | Once the token parses, before any Cloud call; only `tools/call` counts |
 
-The address limit counts every request. The caller limit counts only
-`tools/call` messages: `initialize`, notifications, `tools/list` and `ping`
-never count, so a stateless client that sets up a session before each call
-spends one of its 60 per call. The gateway reads the JSON-RPC body from a
-copy of the request, after the address limit, to count them: a `tools/call`
-message counts one, and a JSON array counts one per `tools/call` element
-before it is refused as a batch. A body that does not parse counts nothing
-and gets the usual `-32700` parse error. A refused request answers HTTP
+The address limit counts every `/mcp` request, with or without a token: it
+is the only bound on a client that rotates through made-up tokens. It is
+shared by everyone behind one egress address, so clients behind one NAT,
+VPN or CI runner pool count together, and a hosted MCP client that calls
+from its provider's shared addresses could reach it while each of its users
+is well under the caller limit. A stateless client sends about 4 requests
+per tool call (`initialize`, `notifications/initialized`, a `GET` and the
+`tools/call`), so the address limit leaves room for several such clients at
+the caller limit. The number lives only in `wrangler.jsonc`; raise it there
+if shared addresses hit it.
+
+The caller limit counts only `tools/call` messages: `initialize`,
+notifications, `tools/list` and `ping` never count, so a stateless client
+that sets up a session before each call spends one of its 60 per call. The
+gateway reads and parses the JSON-RPC body once, after the token, and
+refuses a batch (a JSON array) with its usual `400` before the caller limit,
+so a batch counts nothing; a single `tools/call` message counts one. A body
+that does not parse counts nothing and gets the usual `-32700` parse error.
+A refused request answers HTTP
 `429` with `Retry-After` set to the limit's period (the binding does not
 say how much of it is left), the usual CORS headers for an allowed
 `Origin`, and a JSON-RPC error:
@@ -123,8 +134,12 @@ say how much of it is left), the usual CORS headers for an allowed
 `data` is an ErrorDefinition instance: blowhorn-mcp-1010 from
 `errors/mcp.json`, every field the construct requires and no other, with
 only the cause of the limit that refused, its remediations kept:
-`too-many-calls` for the caller limit, `shared-address` for the address
-limit. `test/ratelimit.test.js` validates the `data` of both limits' 429s
+`too-many-calls` for the caller limit, as above, and `shared-address` for
+the address limit ("Requests from every client on this network address
+count together, and together they passed the per-address limit.", with the
+remediations `wait-retry-after` and `fewer-requests-from-address`, which
+suggests reusing one session instead of initializing before every call).
+`test/ratelimit.test.js` validates the `data` of both limits' 429s
 against the vendored ErrorDefinition construct. `-32029` is in JSON-RPC's
 server-error range and echoes HTTP 429. A refused request is never sent to
 Cloud and records no activity event. It logs one line,

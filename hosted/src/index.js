@@ -11,9 +11,9 @@
  * carry a Bearer token; Cloud validates it on each tool call. Each call is then
  * recorded as an event in the caller's Cloud activity (src/events.js), posted
  * alongside the response with ctx.waitUntil and never awaited. Every /mcp
- * request but a preflight passes a per-address rate limit first, and each
- * tools/call in one with a token counts toward a per-caller limit before
- * Cloud is called (src/ratelimit.js). There is no SSE stream, no session and
+ * request but a preflight passes a per-address rate limit first, and a
+ * tools/call with a token counts toward a per-caller limit before Cloud is
+ * called (src/ratelimit.js). There is no SSE stream, no session and
  * no JSON-RPC batch.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -25,7 +25,7 @@ import { Validator } from "@cfworker/json-schema";
 import { bearerToken } from "./auth.js";
 import { TOOLS, VERSION, callCloud, cloudBase } from "./cloud.js";
 import { operationId, postEvent, toolEvent } from "./events.js";
-import { addressKey, callerKey, refusal, refuses, toolCalls } from "./ratelimit.js";
+import { addressKey, callerKey, refusal, refuses } from "./ratelimit.js";
 
 // Module-private: Workers treat every named export of the main module as an entrypoint.
 const NAME = "blowhorn-mcp-hosted";
@@ -173,25 +173,9 @@ async function mcp(request, env, origin, events) {
     );
   }
 
-  // Only tools/call counts per caller, so a stateless client's initialize, notifications,
-  // tools/list and ping never spend its calls. Keyed by the token's hash, never the token;
-  // nothing is sent to Cloud or recorded for a refused request.
-  const calls = await toolCalls(request, MAX_REQUEST_BYTES);
-  if (calls) {
-    const caller = await callerKey(token);
-    for (let i = 0; i < calls; i++) {
-      if (await refuses(env, "caller", caller)) {
-        log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
-        return refusal("caller", cors);
-      }
-    }
-  }
-
-  const base = cloudBase(env);
-  if (!base) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", cors);
-
-  // Parsed here, not by the SDK, so a JSON-RPC batch (an array) is refused before
-  // it can fan out into many Cloud calls at once.
+  // Parsed once here, not by the SDK, which gets the parsed body: so a JSON-RPC batch
+  // (an array) is refused before it counts toward the caller limit or can fan out
+  // into many Cloud calls at once.
   let parsedBody;
   try {
     const body = await readRequestBody(request, MAX_REQUEST_BYTES);
@@ -201,6 +185,20 @@ async function mcp(request, env, origin, events) {
     return rpcError(400, -32700, "Parse error: Invalid JSON", cors);
   }
   if (Array.isArray(parsedBody)) return rpcError(400, -32600, "Invalid Request: JSON-RPC batches are not supported; send one message per POST.", cors);
+
+  // Only tools/call counts per caller, so a stateless client's initialize, notifications,
+  // tools/list and ping never spend its calls. Keyed by the token's hash, never the token;
+  // nothing is sent to Cloud or recorded for a refused request.
+  if (parsedBody?.method === "tools/call") {
+    const caller = await callerKey(token);
+    if (await refuses(env, "caller", caller)) {
+      log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
+      return refusal("caller", cors);
+    }
+  }
+
+  const base = cloudBase(env);
+  if (!base) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", cors);
 
   const server = buildServer(base, events);
   const transport = new WebStandardStreamableHTTPServerTransport({

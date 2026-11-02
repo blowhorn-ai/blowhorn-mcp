@@ -225,10 +225,10 @@
         },
         {
           "id": "shared-address",
-          "description": "More requests than the per-address limit came from one network address: often a client retrying without its token, or many clients behind one shared address.",
+          "description": "Requests from every client on this network address count together, and together they passed the per-address limit.",
           "remediations": [
-            {"id": "authenticate", "description": "Send your own Blowhorn Cloud API token as an Authorization: Bearer header; requests without one are refused and only add to the count."},
-            {"id": "wait-retry-after", "description": "Wait the number of seconds in the Retry-After header, then send the call again."}
+            {"id": "wait-retry-after", "description": "Wait the number of seconds in the Retry-After header, then send the call again."},
+            {"id": "fewer-requests-from-address", "description": "Send fewer requests from this address, for example by reusing one session instead of initializing before every call."}
           ]
         }
       ],
