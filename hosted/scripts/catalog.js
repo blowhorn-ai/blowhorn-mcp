@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Validator } from "@cfworker/json-schema";
-import yaml from "js-yaml";
+import { load } from "js-yaml";
 
 export const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const VENDOR = path.join(HOSTED, "schemas", "vendor");
@@ -112,7 +112,7 @@ function loader() {
   return (file) => {
     if (!docs.has(file)) {
       if (!fs.existsSync(file)) throw new CatalogError(`${file}: $ref target file does not exist`);
-      docs.set(file, yaml.load(fs.readFileSync(file, "utf8")));
+      docs.set(file, load(fs.readFileSync(file, "utf8")));
     }
     return docs.get(file);
   };

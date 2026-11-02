@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import yaml from "js-yaml";
+import { load } from "js-yaml";
 
 const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = (name) => path.join(HOSTED, "scripts", name);
@@ -110,8 +110,8 @@ test("source bounds are kept and missing ones get the defaults", () => {
 test("the catalog's events schemas are the vendored ones, with every $ref inlined and every x- key dropped", () => {
   const catalog = JSON.parse(generateTo().text);
   const vendor = path.join(HOSTED, "schemas", "vendor", "meshery-schemas", "schemas", "constructs");
-  const events = yaml.load(fs.readFileSync(path.join(vendor, "v1beta3", "event", "api.yml"), "utf8")).components.schemas;
-  const core = yaml.load(fs.readFileSync(path.join(vendor, "v1beta2", "core", "api.yml"), "utf8")).components.schemas;
+  const events = load(fs.readFileSync(path.join(vendor, "v1beta3", "event", "api.yml"), "utf8")).components.schemas;
+  const core = load(fs.readFileSync(path.join(vendor, "v1beta2", "core", "api.yml"), "utf8")).components.schemas;
   assert.deepStrictEqual(Object.keys(catalog.events).sort(), ["error", "event", "path", "payload"]);
   assert.strictEqual(catalog.events.path, "/api/events");
   assert.strictEqual(catalog.events.payload.description, events.EventPayload.description);
