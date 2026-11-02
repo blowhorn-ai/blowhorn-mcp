@@ -9,9 +9,9 @@
  * read: a GET on the Cloud API. Each call forwards the caller's own Cloud API
  * token, sent as a Bearer header, and nothing is stored. Every request must
  * carry a Bearer token; Cloud validates it on each tool call. Each call is then
- * recorded as an event in the caller's Cloud activity (src/events.js), after
- * the response, with ctx.waitUntil. There is no SSE stream, no session and no
- * JSON-RPC batch.
+ * recorded as an event in the caller's Cloud activity (src/events.js), posted
+ * alongside the response with ctx.waitUntil and never awaited. There is no SSE
+ * stream, no session and no JSON-RPC batch.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -71,7 +71,7 @@ function validationErrors(tool, args) {
 
 /**
  * The MCP server for one HTTP request. `events` carries the request's ctx and
- * operationId; a call's event is posted with ctx.waitUntil after its response.
+ * operationId; a call's event is posted with ctx.waitUntil, never awaited.
  */
 function buildServer(base, events) {
   const server = new Server({ name: NAME, version: VERSION }, {
@@ -89,7 +89,7 @@ function buildServer(base, events) {
     const args = request.params.arguments ?? {};
     const started = Date.now();
     const token = extra.authInfo.token;
-    // Posts this call's event after the response. Nothing is emitted without ctx.waitUntil.
+    // Posts this call's event alongside the response, never awaited. Nothing is emitted without ctx.waitUntil.
     const record = (outcome, { httpStatus, message, orgId } = {}) => {
       if (typeof events.ctx?.waitUntil !== "function") return;
       const payload = toolEvent({

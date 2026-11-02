@@ -65,6 +65,7 @@
         }
       }
     },
+    "path": "/api/events",
     "payload": {
       "additionalProperties": true,
       "description": "Payload for creating a new event.",

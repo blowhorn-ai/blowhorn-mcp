@@ -9,10 +9,11 @@
  * schema; anything else is a CatalogError, so a schema change that exposes a
  * write can never slip into this read-only gateway.
  *
- * The catalog also carries an `events` entry: the three schemas the gateway
- * records each tool call with (the createEvent body, the Event fields it
- * persists beyond that body, and MeshkitError), inlined the same way. A
- * missing schema is a CatalogError. src/events.js composes them.
+ * The catalog also carries an `events` entry: the createEvent path, which must
+ * be a POST, and the three schemas the gateway records each tool call with
+ * (the createEvent body, the Event fields it persists beyond that body, and
+ * MeshkitError), inlined the same way. A missing operation or schema is a
+ * CatalogError. src/events.js composes them.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -230,10 +231,23 @@ function component(root, rel, name, load) {
   return inline(schema, file, load);
 }
 
+/** The path of the createEvent operation. A CatalogError when it is missing or not a POST. */
+function createEventPath(root, load) {
+  const doc = load(path.resolve(root, EVENT_API));
+  for (const [route, pathItem] of Object.entries(doc.paths || {})) {
+    for (const method of METHODS) {
+      if (pathItem[method]?.operationId !== "createEvent") continue;
+      if (method !== "post") throw new CatalogError(`${EVENT_API} ${method.toUpperCase()} ${route} (createEvent): is not a POST`);
+      return route;
+    }
+  }
+  throw new CatalogError(`${EVENT_API}: createEvent operation is missing`);
+}
+
 /**
- * The event schemas: `payload` is the createEvent body, `event` keeps only the
- * Event properties createEvent persists that the body leaves open, and `error`
- * is MeshkitError, the shape of metadata.error.
+ * The event schemas: `path` is where createEvent is posted, `payload` is its
+ * body, `event` keeps only the Event properties createEvent persists that the
+ * body leaves open, and `error` is MeshkitError, the shape of metadata.error.
  */
 function eventSchemas(root, load) {
   const persisted = component(root, EVENT_API, "Event", load).properties ?? {};
@@ -243,6 +257,7 @@ function eventSchemas(root, load) {
     event.properties[key] = persisted[key];
   }
   return {
+    path: createEventPath(root, load),
     payload: component(root, EVENT_API, "EventPayload", load),
     event,
     error: component(root, ERROR_API, "MeshkitError", load),

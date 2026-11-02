@@ -2,12 +2,12 @@
 /*
  * The Cloud activity event each tool call records. Blowhorn Cloud stores it
  * through its createEvent API (POST /api/events), so the caller sees the call
- * in their own activity. The schemas come from the generated catalog's
- * `events` entry, composed here: nothing is copied by hand.
+ * in their own activity. The path and schemas come from the generated
+ * catalog's `events` entry, composed here: nothing is copied by hand.
  *
  * Recording is best effort. postEvent never throws and never retries, and
- * index.js runs it with ctx.waitUntil after the response, so it can neither
- * delay nor change a tool result.
+ * index.js hands it to ctx.waitUntil without awaiting it, so it runs alongside
+ * the response and can neither delay nor change a tool result.
  */
 import { Validator } from "@cfworker/json-schema";
 import catalog from "./catalog.generated.json" with { type: "json" };
@@ -17,7 +17,6 @@ import { redact } from "./redact.js";
 export const CATEGORY = "mcp";
 export const ACTION_TOOL_CALLED = "tool_called";
 const GATEWAY = "blowhorn-mcp-hosted";
-const ENDPOINT = "/api/events";
 const POST_TIMEOUT_MS = 10_000;
 const MAX_NAME_CHARS = 100;
 const MAX_NAMES = 50;
@@ -27,7 +26,7 @@ const MAX_ARGUMENT_BYTES = 8 * 1024;
 const TRACEPARENT = /^([0-9a-f]{2})-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/;
 const NAME_ONLY = ["invalid_arguments", "unknown_tool"];
 
-const { payload, event, error } = catalog.events;
+const { path: ENDPOINT, payload, event, error } = catalog.events;
 /** EventPayload, plus the fields createEvent persists that it leaves open: severity, operationId and metadata.error. */
 const SCHEMA = {
   allOf: [
