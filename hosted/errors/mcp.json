@@ -1,5 +1,5 @@
 {
-  "$comment": "The hosted MCP gateway's error codes (blowhorn-ai/blowhorn internal/design/structured-error-codes.md), in the shape of blowhorn-ai/blowhorn's engine registry. Literal text only; nothing is built at run time. Every definition validates against the vendored ErrorDefinition construct (hosted/schemas/vendor/blowhorn/schemas/dist/ErrorDefinition.schema.json), checked by make hosted-check. The numbers are provisional until the registry (blowhorn-ai/blowhorn#1662) allocates them. No remediation carries an action: only a person or their client can do any of them. src/errors.js maps each gateway outcome to its code; the short clause an activity event's description gives stays in src/events.js. Numbers are never reused; nextErrorCode is the next unused one.",
+  "$comment": "The hosted MCP gateway's error codes (blowhorn-ai/blowhorn internal/design/structured-error-codes.md), in the shape of blowhorn-ai/blowhorn's engine registry. Literal text only; nothing is built at run time. Every definition validates against the vendored ErrorDefinition construct (hosted/schemas/vendor/blowhorn/schemas/dist/ErrorDefinition.schema.json), checked by make hosted-check. The numbers are provisional until the registry (blowhorn-ai/blowhorn#1662) allocates them. No remediation carries an action: only a person or their client can do any of them. src/errors.js maps each gateway outcome to its code; an activity event's description gives its definition's shortDescription, the only copy of that text, and a 429's error.data is the blowhorn-mcp-1010 definition with only the refusing limit's cause. Numbers are never reused; nextErrorCode is one past the highest, checked by make hosted-check.",
   "component": {"type": "blowhorn", "name": "mcp"},
   "nextErrorCode": 1011,
   "definitions": [
@@ -213,11 +213,11 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "warning",
       "shortDescription": "Too many requests: the gateway's rate limit refused this one.",
-      "longDescription": "The gateway limits how many requests one token, and one network address, can send in a minute, so a runaway client cannot flood Blowhorn Cloud or the activity feed. This request was over a limit, so nothing was sent to Cloud and nothing was recorded in your activity. The Retry-After header says how many seconds to wait.",
+      "longDescription": "The gateway limits how many tool calls one token can make, and how many requests one network address can send, in a minute, so a runaway client cannot flood Blowhorn Cloud or the activity feed. This request was over a limit, so nothing was sent to Cloud and nothing was recorded in your activity. The Retry-After header says how many seconds to wait.",
       "probableCauses": [
         {
           "id": "too-many-calls",
-          "description": "This token sent more requests than the per-minute limit, often an agent calling a tool in a loop.",
+          "description": "This token made more tool calls than the per-minute limit allows, often an agent calling a tool in a loop.",
           "remediations": [
             {"id": "wait-retry-after", "description": "Wait the number of seconds in the Retry-After header, then send the call again."},
             {"id": "batch-calls", "description": "Send fewer, larger calls: for example, ask for bigger pages instead of many small ones."}

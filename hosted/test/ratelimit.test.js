@@ -5,13 +5,12 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Validator } from "@cfworker/json-schema";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import worker from "../src/index.js";
 import { definition } from "../src/errors.js";
 import { LIMITS, RATE_LIMITED, addressKey, callerKey } from "../src/ratelimit.js";
-import { errorDefinitionSchema } from "../scripts/registry.js";
+import { errorDefinitionSchema, errorDefinitionValidator } from "../scripts/registry.js";
 
 const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TOKEN = "ratelimit-test-token-0123456789";
@@ -24,23 +23,10 @@ const EVENTS = "https://cloud.blowhorn.ai/api/events";
 const INIT = { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } };
 const auth = { Authorization: `Bearer ${TOKEN}`, "CF-Connecting-IP": IP };
 
-/** The shape of a 429's error.data, from the vendored ErrorDefinition construct's own properties. */
+/** A 429's error.data is an ErrorDefinition instance, checked with the registry check's own validator. */
 const DEFINITION = errorDefinitionSchema();
-const DATA = new Validator(
-  {
-    type: "object",
-    required: ["code", "moniker", "probableCauses", "referenceUrl"],
-    additionalProperties: false,
-    properties: {
-      code: DEFINITION.properties.code,
-      moniker: DEFINITION.properties.moniker,
-      probableCauses: { ...DEFINITION.properties.probableCauses, minItems: 1 },
-      referenceUrl: DEFINITION.properties.referenceUrl,
-    },
-  },
-  "2020-12",
-  false,
-);
+const DATA = errorDefinitionValidator(DEFINITION);
+const CALL = ["tools/call", { name: "getEvents", arguments: {} }];
 
 /** A fake Workers Rate Limiting binding: limit({ key }) answers { success }, and every key it saw is kept. */
 function binding(success = true) {
@@ -58,12 +44,16 @@ function envWith({ address = binding(), caller = binding() } = {}) {
   return { ...BASE_ENV, RATE_LIMIT_ADDRESS: address, RATE_LIMIT_CALLER: caller };
 }
 
-function rpc(method, params = {}, headers = auth) {
+function post(body, headers = auth) {
   return new Request(MCP, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    body,
   });
+}
+
+function rpc(method, params = {}, headers = auth) {
+  return post(JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), headers);
 }
 
 /** Replaces globalThis.fetch (Cloud) for the test; returns the calls it saw. */
@@ -78,6 +68,11 @@ function mockCloud(t, respond = () => assert.fail("Cloud was called")) {
     globalThis.fetch = original;
   });
   return calls;
+}
+
+/** Cloud answering every tool call with an empty list and every event post with 201. */
+function mockCloudOk(t) {
+  return mockCloud(t, (url) => (url === EVENTS ? new Response(null, { status: 201 }) : new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } })));
 }
 
 /** Captures console.log for the test's duration; the returned array holds the parsed lines. */
@@ -110,12 +105,10 @@ async function assertRefused(res, name) {
   assert.strictEqual(body.error.message, d.shortDescription);
   const { valid, errors } = DATA.validate(body.error.data);
   assert.ok(valid, errors.map((e) => `${e.instanceLocation} ${e.error}`).join("; "));
-  assert.deepStrictEqual(body.error.data, {
-    code: "blowhorn-mcp-1010",
-    moniker: "ErrRateLimited",
-    probableCauses: d.probableCauses.filter((c) => c.id === LIMITS[name].cause),
-    referenceUrl: "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1010/",
-  });
+  assert.deepStrictEqual(Object.keys(body.error.data).sort(), [...DEFINITION.required].sort(), "every required field, and no other");
+  assert.deepStrictEqual(body.error.data, { ...d, probableCauses: d.probableCauses.filter((c) => c.id === LIMITS[name].cause) });
+  assert.strictEqual(body.error.data.code, "blowhorn-mcp-1010");
+  assert.strictEqual(body.error.data.probableCauses.length, 1);
   assert.ok(body.error.data.probableCauses[0].remediations.length >= 2);
   return body;
 }
@@ -145,11 +138,11 @@ function readWranglerConfig() {
   return JSON.parse(out);
 }
 
-/** README.md's Rate limits table, as { binding: { limit, period } } from its "N requests per P s" cells. */
+/** README.md's Rate limits table, as { binding: { limit, period } } from its "N requests per P s" or "N tool calls per P s" cells. */
 function readmeLimits() {
   const readme = fs.readFileSync(path.join(HOSTED, "README.md"), "utf8");
   const section = readme.slice(readme.indexOf("\n## Rate limits\n"), readme.indexOf("\n## ", readme.indexOf("\n## Rate limits\n") + 1));
-  const rows = [...section.matchAll(/^\|[^|\n]*\| `(RATE_LIMIT_[A-Z]+)` \|[^|\n]*\| (\d+) requests per (\d+) s \|/gm)];
+  const rows = [...section.matchAll(/^\|[^|\n]*\| `(RATE_LIMIT_[A-Z]+)` \|[^|\n]*\| (\d+) (?:requests|tool calls) per (\d+) s \|/gm)];
   return Object.fromEntries(rows.map(([, binding, limit, period]) => [binding, { limit: Number(limit), period: Number(period) }]));
 }
 
@@ -188,7 +181,7 @@ test("under both limits a session runs as usual, keyed by the address and the to
   const caller = binding();
   const env = envWith({ address, caller });
   const logs = captureLogs(t);
-  const calls = mockCloud(t, (url) => (url === EVENTS ? new Response(null, { status: 201 }) : new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } })));
+  const calls = mockCloudOk(t);
   const ctx = collector();
   const methods = [];
   const transport = new StreamableHTTPClientTransport(new URL(MCP), {
@@ -205,12 +198,11 @@ test("under both limits a session runs as usual, keyed by the address and the to
   assert.ok(!(await c.callTool({ name: "getEvents", arguments: {} })).isError);
   await ctx.settle();
   assert.strictEqual(calls.filter((x) => x.url === EVENTS).length, 1);
-  // Every /mcp request counts for its address; only the POSTs, which carry the token past the 405, for the caller.
+  // Every /mcp request counts for its address; only the one tools/call for the caller.
   assert.strictEqual(address.keys.length, methods.length);
   assert.deepStrictEqual(new Set(address.keys), new Set([IP]));
   assert.ok(methods.filter((m) => m === "POST").length >= 4, "initialize, initialized, tools/list and tools/call");
-  assert.strictEqual(caller.keys.length, methods.filter((m) => m === "POST").length);
-  assert.deepStrictEqual(new Set(caller.keys), new Set([HASH]));
+  assert.deepStrictEqual(caller.keys, [HASH]);
   assert.match(HASH, /^[0-9a-f]{64}$/);
   assert.ok(!caller.keys.some((k) => k.includes(TOKEN)));
   assert.ok(!logs.some((l) => l.outcome === "rate_limited"));
@@ -229,7 +221,7 @@ test("over the address limit is 429 before authentication: no caller check, no C
   const env = envWith({ address: binding(false), caller });
   const ctx = collector();
   const cases = [
-    rpc("tools/call", { name: "getEvents", arguments: {} }),
+    rpc(...CALL),
     rpc("initialize", INIT, { "CF-Connecting-IP": IP }),
     rpc("initialize", INIT, { Authorization: "Bearer", "CF-Connecting-IP": IP }),
     new Request(MCP, { method: "GET", headers: { "CF-Connecting-IP": IP } }),
@@ -245,38 +237,71 @@ test("over the address limit is 429 before authentication: no caller check, no C
   assert.deepStrictEqual(logs, cases.map(() => ({ outcome: "rate_limited", limit: "address" })));
 });
 
-test("over the caller limit is 429 with the caller's cause: no Cloud call, no event, one log line without the token or its hash", async (t) => {
+test("over the caller limit a tools/call is 429 with the caller's cause: no Cloud call, no event, one log line without the token or its hash", async (t) => {
   const calls = mockCloud(t);
   const logs = captureLogs(t);
   const ctx = collector();
   const env = envWith({ caller: binding(false) });
-  for (const request of [rpc("tools/call", { name: "getEvents", arguments: {} }), rpc("initialize", INIT)]) {
-    await assertRefused(await worker.fetch(request, env, ctx), "caller");
-  }
+  await assertRefused(await worker.fetch(rpc(...CALL), env, ctx), "caller");
   await ctx.settle();
   assert.strictEqual(calls.length, 0);
   assert.strictEqual(ctx.promises.length, 0);
-  assert.deepStrictEqual(logs, [
-    { outcome: "rate_limited", limit: "caller", caller: HASH.slice(0, 8) },
-    { outcome: "rate_limited", limit: "caller", caller: HASH.slice(0, 8) },
-  ]);
+  assert.deepStrictEqual(logs, [{ outcome: "rate_limited", limit: "caller", caller: HASH.slice(0, 8) }]);
   const text = JSON.stringify(logs);
   assert.ok(!text.includes(TOKEN) && !text.includes(HASH));
 });
 
-test("a burst passes up to the limit, then is refused", async (t) => {
+test("initialize, notifications, tools/list and ping never count toward the caller limit, even over it", async (t) => {
   mockCloud(t);
+  const logs = captureLogs(t);
+  const caller = binding(false);
+  const env = envWith({ caller });
+  const notification = post(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
+  for (const [request, status] of [[rpc("initialize", INIT), 200], [notification, 202], [rpc("tools/list"), 200], [rpc("ping"), 200]]) {
+    assert.strictEqual((await worker.fetch(request, env, {})).status, status);
+  }
+  assert.strictEqual(caller.keys.length, 0);
+  assert.ok(!logs.some((l) => l.outcome === "rate_limited"));
+});
+
+test("each tools/call counts once, and each tools/call in a JSON array once before the batch is refused", async (t) => {
+  mockCloudOk(t);
+  captureLogs(t);
+  const caller = binding();
+  const env = envWith({ caller });
+  assert.strictEqual((await worker.fetch(rpc(...CALL), env, collector())).status, 200);
+  assert.strictEqual(caller.keys.length, 1);
+  const [method, params] = CALL;
+  const batch = post(JSON.stringify([{ jsonrpc: "2.0", id: 1, method, params }, { jsonrpc: "2.0", id: 2, method: "tools/list" }, { jsonrpc: "2.0", id: 3, method, params }]));
+  const res = await worker.fetch(batch, env, {});
+  assert.strictEqual(res.status, 400);
+  assert.strictEqual((await res.json()).error.code, -32600);
+  assert.strictEqual(caller.keys.length, 3);
+});
+
+test("a body that does not parse is not counted and gets the gateway's usual parse error", async (t) => {
+  mockCloud(t);
+  captureLogs(t);
+  const caller = binding(false);
+  const res = await worker.fetch(post('{"jsonrpc": "2.0", "method": "tools/call"'), envWith({ caller }), {});
+  assert.strictEqual(res.status, 400);
+  assert.deepStrictEqual(await res.json(), { jsonrpc: "2.0", error: { code: -32700, message: "Parse error: Invalid JSON" }, id: null });
+  assert.strictEqual(caller.keys.length, 0);
+});
+
+test("a burst of tool calls passes up to the limit, then is refused", async (t) => {
+  mockCloudOk(t);
   captureLogs(t);
   const env = envWith({ caller: binding((n) => n <= 3) });
   const statuses = [];
-  for (let i = 0; i < 5; i++) statuses.push((await worker.fetch(rpc("initialize", INIT), env, {})).status);
+  for (let i = 0; i < 5; i++) statuses.push((await worker.fetch(rpc(...CALL), env, collector())).status);
   assert.deepStrictEqual(statuses, [200, 200, 200, 429, 429]);
 });
 
 test("a 429 for an allowed Origin carries the CORS headers, Retry-After exposed", async (t) => {
   mockCloud(t);
   captureLogs(t);
-  const res = await worker.fetch(rpc("initialize", INIT, { ...auth, Origin: ORIGIN }), envWith({ caller: binding(false) }), {});
+  const res = await worker.fetch(rpc(...CALL, { ...auth, Origin: ORIGIN }), envWith({ caller: binding(false) }), {});
   await assertRefused(res, "caller");
   assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), ORIGIN);
   assert.strictEqual(res.headers.get("Vary"), "Origin");
@@ -296,9 +321,9 @@ test("/healthz and the OPTIONS preflight are never limited", async (t) => {
 });
 
 test("without the bindings in env the request passes, and each missing binding logs ratelimit_unbound once per isolate", async (t) => {
-  mockCloud(t);
+  mockCloudOk(t);
   const logs = captureLogs(t);
-  for (let i = 0; i < 3; i++) assert.strictEqual((await worker.fetch(rpc("initialize", INIT), BASE_ENV, {})).status, 200);
+  for (let i = 0; i < 3; i++) assert.strictEqual((await worker.fetch(rpc(...CALL), BASE_ENV, collector())).status, 200);
   assert.deepStrictEqual(
     logs.filter((l) => l.event === "ratelimit_unbound"),
     [
@@ -309,12 +334,12 @@ test("without the bindings in env the request passes, and each missing binding l
 });
 
 test("a binding that throws lets the request through and logs ratelimit_failed with the error name only", async (t) => {
-  mockCloud(t);
+  mockCloudOk(t);
   const logs = captureLogs(t);
   const broken = { limit: async () => Promise.reject(new TypeError(`limiter down ${TOKEN}`)) };
-  const res = await worker.fetch(rpc("initialize", INIT), envWith({ address: broken, caller: broken }), {});
+  const res = await worker.fetch(rpc(...CALL), envWith({ address: broken, caller: broken }), collector());
   assert.strictEqual(res.status, 200);
-  assert.deepStrictEqual(logs, [
+  assert.deepStrictEqual(logs.filter((l) => l.event?.startsWith("ratelimit_")), [
     { event: "ratelimit_failed", limit: "address", error: "TypeError" },
     { event: "ratelimit_failed", limit: "caller", error: "TypeError" },
   ]);
@@ -351,6 +376,6 @@ test("the 429 example in README.md is exactly what the caller limit sends", asyn
   const readme = fs.readFileSync(path.join(HOSTED, "README.md"), "utf8");
   const section = readme.slice(readme.indexOf("\n## Rate limits\n"));
   const example = JSON.parse(section.match(/```json\n([\s\S]*?)\n```/)[1]);
-  const res = await worker.fetch(rpc("initialize", INIT), envWith({ caller: binding(false) }), {});
+  const res = await worker.fetch(rpc(...CALL), envWith({ caller: binding(false) }), {});
   assert.deepStrictEqual(await res.json(), example);
 });

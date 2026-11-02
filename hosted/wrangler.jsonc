@@ -27,7 +27,8 @@
   // A missing binding lets requests through and logs ratelimit_unbound.
   "ratelimits": [
     // Per caller: keyed by the hex SHA-256 of the bearer token, never the
-    // token itself. Checked once the token parses, before any Cloud call.
+    // token itself. Checked once the token parses, before any Cloud call;
+    // only tools/call messages count, never initialize, tools/list or ping.
     {
       "name": "RATE_LIMIT_CALLER",
       "namespace_id": "41301",

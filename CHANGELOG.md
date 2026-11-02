@@ -22,10 +22,15 @@ launcher's, which every listing file follows.
   The Worker tests still run on Node 20 (#12).
 - `hosted/`: rate limits on `/mcp` with Cloudflare's Workers Rate Limiting
   bindings in `wrangler.jsonc`: 300 requests a minute per network address,
-  checked before authentication, and 60 per caller, keyed by the hex
-  SHA-256 of the bearer token, checked before any Cloud call. Over a limit,
-  HTTP `429` with `Retry-After` and a JSON-RPC error carrying the new code
-  `blowhorn-mcp-1010` (`ErrRateLimited`); the request is not sent to Cloud,
+  every `/mcp` request counted, checked before authentication, and 60 tool
+  calls a minute per caller, keyed by the hex SHA-256 of the bearer token,
+  checked before any Cloud call. Only `tools/call` counts per caller, one
+  per message (one per element of a JSON array); `initialize`,
+  notifications, `tools/list` and `ping` never do, and a body that does not
+  parse is not counted. Over a limit, HTTP `429` with `Retry-After` and a
+  JSON-RPC error carrying the new code `blowhorn-mcp-1010`
+  (`ErrRateLimited`), whose `data` is the code's ErrorDefinition with only
+  the refusing limit's cause; the request is not sent to Cloud,
   records no activity event, and logs one `rate_limited` line without the
   token. A binding missing from `env` lets requests through and logs one
   `ratelimit_unbound` line per isolate naming it (#13).
@@ -34,7 +39,10 @@ launcher's, which every listing file follows.
   blowhorn-ai/blowhorn's registry. Every definition gains a moniker,
   severity, short and long description and reference URL, and is validated
   by `make hosted-check` against blowhorn-ai/blowhorn's ErrorDefinition
-  construct, now vendored in `hosted/schemas/vendor/blowhorn/`. Events send
+  construct, now vendored in `hosted/schemas/vendor/blowhorn/`, and by the
+  gateway's own rules: unique codes and monikers, `nextErrorCode` one past
+  the highest code, at least one cause per definition and one remediation
+  per cause. Events send
   the same `metadata.error` as before; a failed call's event `description`
   now gives its code's `shortDescription` as the reason, the only copy of
   that text. `hosted/schemas/vendor/SOURCES.json`

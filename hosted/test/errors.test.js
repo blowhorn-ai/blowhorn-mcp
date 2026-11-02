@@ -2,13 +2,13 @@
 import test from "node:test";
 import assert from "node:assert";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Validator } from "@cfworker/json-schema";
 import registry from "../errors/mcp.json" with { type: "json" };
 import { CODES, definition } from "../src/errors.js";
 import { toolEvent } from "../src/events.js";
-import { errorDefinitionSchema, registryProblems } from "../scripts/registry.js";
+import { errorDefinitionValidator, registryProblems } from "../scripts/registry.js";
 
 const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const EVENT_OUTCOMES = Object.keys(CODES).filter((o) => o !== "rate_limited");
@@ -23,7 +23,7 @@ function eventFor(outcome) {
 }
 
 test("every definition validates against the vendored ErrorDefinition construct", () => {
-  const validator = new Validator(errorDefinitionSchema(), "2020-12", false);
+  const validator = errorDefinitionValidator();
   for (const d of registry.definitions) {
     const { valid, errors } = validator.validate(d);
     assert.ok(valid, `${d.code}: ${errors.map((e) => `${e.instanceLocation} ${e.error}`).join("; ")}`);
@@ -31,20 +31,9 @@ test("every definition validates against the vendored ErrorDefinition construct"
   assert.deepStrictEqual(registryProblems(), []);
 });
 
-test("the registry has the engine registry's shape, and its codes are unique and below nextErrorCode", () => {
-  assert.deepStrictEqual(Object.keys(registry).sort(), ["$comment", "component", "definitions", "nextErrorCode"]);
-  assert.deepStrictEqual(registry.component, { type: "blowhorn", name: "mcp" });
-  assert.match(registry.$comment, /provisional until the registry \(blowhorn-ai\/blowhorn#1662\)/);
-  const numbers = registry.definitions.map((d) => Number(d.code.match(/^blowhorn-mcp-(\d{4})$/)[1]));
-  assert.strictEqual(new Set(numbers).size, numbers.length);
-  assert.ok(numbers.every((n) => n < registry.nextErrorCode));
-  assert.strictEqual(registry.nextErrorCode, Math.max(...numbers) + 1);
-  for (const d of registry.definitions) assert.deepStrictEqual(d.component, registry.component, d.code);
-});
-
 test("every outcome the gateway reports maps to a definition, and every definition is used", () => {
   for (const [outcome, code] of Object.entries(CODES)) assert.strictEqual(definition(outcome).code, code, outcome);
-  assert.deepStrictEqual(Object.values(CODES).sort(), registry.definitions.filter((d) => !d.retired).map((d) => d.code).sort());
+  assert.deepStrictEqual(Object.values(CODES).sort(), registry.definitions.map((d) => d.code).sort());
   for (const outcome of EVENT_OUTCOMES) {
     const { error } = eventFor(outcome).metadata;
     const d = definition(outcome);
@@ -95,12 +84,32 @@ test("registryProblems names what the construct and the gateway's own rules refu
     [(r) => (r.component = { type: "blowhorn", name: "engine" }), /component is not \{"type": "blowhorn", "name": "mcp"\}/],
     [(r) => r.definitions.splice(9, 1), /outcome not_json: no definition for blowhorn-mcp-1009/],
     [(r) => (r.extra = true), /keys are \$comment, component, definitions, extra, nextErrorCode/],
+    [(r) => (r.nextErrorCode = 1012), /nextErrorCode is 1012; want 1011, one past the highest code/],
+    [(r) => (r.definitions[3].probableCauses = []), /definitions\[3\] blowhorn-mcp-1003: no probable cause/],
+    [(r) => (r.definitions[5].probableCauses[1].remediations = []), /definitions\[5\] blowhorn-mcp-1005: cause call-too-big has no remediation/],
+    [(r) => (r.definitions[2].moniker = "ErrUnknownTool"), /definitions\[2\] blowhorn-mcp-1002: moniker ErrUnknownTool is used twice/],
   ];
   for (const [mutate, want] of cases) {
     const broken = copy();
     mutate(broken);
     assert.match(registryProblems(broken).join("\n"), want);
   }
+});
+
+/** README.md's Error codes table, as [code, moniker, outcome] rows: each cell's first `code span`. */
+function readmeCodes() {
+  const readme = fs.readFileSync(path.join(HOSTED, "README.md"), "utf8");
+  const from = readme.indexOf("\n## Error codes\n");
+  assert.ok(from > 0, "README.md has an Error codes section");
+  const section = readme.slice(from, readme.indexOf("\n## ", from + 1));
+  return [...section.matchAll(/^\| `(blowhorn-mcp-\d{4})` \| `(\w+)` \| `(\w+)`[^|\n]* \|$/gm)].map(([, code, moniker, outcome]) => [code, moniker, outcome]);
+}
+
+test("README.md's Error codes table lists every definition, its moniker and its outcome, and nothing else", () => {
+  const rows = readmeCodes();
+  const outcomeOf = Object.fromEntries(Object.entries(CODES).map(([outcome, code]) => [code, outcome]));
+  assert.deepStrictEqual(rows, registry.definitions.map((d) => [d.code, d.moniker, outcomeOf[d.code]]));
+  assert.deepStrictEqual(Object.fromEntries(rows.map(([code, , outcome]) => [outcome, code])), { ...CODES });
 });
 
 test("the drift check runs the registry check", () => {

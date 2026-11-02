@@ -11,9 +11,10 @@
  * carry a Bearer token; Cloud validates it on each tool call. Each call is then
  * recorded as an event in the caller's Cloud activity (src/events.js), posted
  * alongside the response with ctx.waitUntil and never awaited. Every /mcp
- * request but a preflight passes a per-address rate limit first, and one with
- * a token a per-caller limit before Cloud is called (src/ratelimit.js). There
- * is no SSE stream, no session and no JSON-RPC batch.
+ * request but a preflight passes a per-address rate limit first, and each
+ * tools/call in one with a token counts toward a per-caller limit before
+ * Cloud is called (src/ratelimit.js). There is no SSE stream, no session and
+ * no JSON-RPC batch.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -24,7 +25,7 @@ import { Validator } from "@cfworker/json-schema";
 import { bearerToken } from "./auth.js";
 import { TOOLS, VERSION, callCloud, cloudBase } from "./cloud.js";
 import { operationId, postEvent, toolEvent } from "./events.js";
-import { addressKey, callerKey, refusal, refuses } from "./ratelimit.js";
+import { addressKey, callerKey, refusal, refuses, toolCalls } from "./ratelimit.js";
 
 // Module-private: Workers treat every named export of the main module as an entrypoint.
 const NAME = "blowhorn-mcp-hosted";
@@ -172,11 +173,18 @@ async function mcp(request, env, origin, events) {
     );
   }
 
-  // Keyed by the token's hash, never the token; nothing is sent to Cloud or recorded for a refused request.
-  const caller = await callerKey(token);
-  if (await refuses(env, "caller", caller)) {
-    log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
-    return refusal("caller", cors);
+  // Only tools/call counts per caller, so a stateless client's initialize, notifications,
+  // tools/list and ping never spend its calls. Keyed by the token's hash, never the token;
+  // nothing is sent to Cloud or recorded for a refused request.
+  const calls = await toolCalls(request, MAX_REQUEST_BYTES);
+  if (calls) {
+    const caller = await callerKey(token);
+    for (let i = 0; i < calls; i++) {
+      if (await refuses(env, "caller", caller)) {
+        log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
+        return refusal("caller", cors);
+      }
+    }
   }
 
   const base = cloudBase(env);
