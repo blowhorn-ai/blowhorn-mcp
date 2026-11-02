@@ -13,6 +13,11 @@ launcher's, which every listing file follows.
   caller's Cloud activity (`POST /api/events`, with the caller's own token),
   posted with `ctx.waitUntil` and validated against the vendored event
   schemas (#11). See "What the gateway records" in `hosted/README.md`.
+- `hosted/`: wrangler 4.156.0 is a locked devDependency, and
+  `make hosted-deploy` runs it from `hosted/node_modules` instead of
+  `npx --yes wrangler@4.156.0`. Deploying needs Node 22 (`hosted/.nvmrc`);
+  on an older Node the Makefile stops with one sentence naming the version.
+  The Worker tests still run on Node 20 (#12).
 
 ## 0.1.1
 

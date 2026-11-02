@@ -11,7 +11,7 @@ TAG     := v$(VERSION)
 REQUIRE_PLAIN_VERSION = @printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "$@: version $(VERSION) in package.json is not plain X.Y.Z"; exit 1; }
 
 .PHONY: install generate check check-drift validate check-copy check-skill check-facts check-logo test check-pack schemas-refresh release publish \
-	hosted-install hosted-generate hosted-check hosted-schemas-refresh hosted-deploy
+	hosted-install hosted-generate hosted-check hosted-schemas-refresh hosted-require-node hosted-deploy
 
 ## install: dev tooling (Ajv) into tools/node_modules. The root package has
 ## "os": ["darwin"], which makes npm refuse any install at the root on other
@@ -61,9 +61,20 @@ schemas-refresh:
 	node scripts/schemas-refresh.js
 	$(MAKE) validate
 
-## hosted-install: the interim gateway's packages into hosted/node_modules.
+## hosted-install: the interim gateway's packages into hosted/node_modules,
+## wrangler included, at the versions in hosted/package-lock.json.
+## No lifecycle scripts run. The only ones in the tree are esbuild's and
+## workerd's postinstall, which check that the locked platform binary package
+## (@esbuild/<platform>, @cloudflare/workerd-<platform>) is there, fetch one
+## unlocked from npm if it is not, and swap the JS shim for the binary as a
+## speedup; npm ci already installs the locked one, and both packages find it
+## at run time. The third, fsevents (macOS only, for file watching), ships
+## fsevents.node prebuilt; its install script only rebuilds it.
+## Engines stay a warning, never an error, even if your npm config says
+## otherwise: wrangler and two of its dependencies want Node 22, but only
+## the deploy targets run them, and the Worker tests run on Node 20 (CI has a Node 20 leg).
 hosted-install:
-	npm ci --prefix hosted --ignore-scripts --no-audit --no-fund
+	npm ci --prefix hosted --ignore-scripts --engine-strict=false --no-audit --no-fund
 
 hosted/node_modules/@modelcontextprotocol/sdk/package.json:
 	$(MAKE) hosted-install
@@ -82,10 +93,20 @@ hosted-schemas-refresh: hosted/node_modules/@modelcontextprotocol/sdk/package.js
 	node hosted/scripts/schemas-refresh.js
 	$(MAKE) hosted-generate
 
-## hosted-deploy: deploy the interim gateway Worker. Run from the VM only; needs
+hosted/node_modules/wrangler/package.json:
+	$(MAKE) hosted-install
+
+## hosted-require-node: refuse unless Node is at least the major in
+## hosted/.nvmrc, which is what the locked wrangler needs. Every target that
+## runs wrangler depends on it first.
+hosted-require-node:
+	@node -e 'const want = Number(require("fs").readFileSync("hosted/.nvmrc", "utf8").trim()); if (!Number.isInteger(want)) { console.error("$@: hosted/.nvmrc must hold one Node major version, like 22."); process.exit(1); } const have = process.versions.node; if (Number(have.split(".")[0]) < want) { console.error("$@: wrangler needs Node " + want + " or later (hosted/.nvmrc), but this is Node " + have + "."); process.exit(1); }'
+
+## hosted-deploy: deploy the interim gateway Worker with the locked wrangler in
+## hosted/node_modules, never a download. Run from the VM only; needs
 ## CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the environment.
-hosted-deploy: hosted-check
-	cd hosted && npx --yes wrangler@4.156.0 deploy
+hosted-deploy: hosted-require-node hosted/node_modules/wrangler/package.json hosted-check
+	cd hosted && ./node_modules/.bin/wrangler deploy
 
 ## release: tag $(TAG) on master and create its GitHub release. The Gemini
 ## extensions gallery reads releases, and the tag must equal gemini-extension.json's version.

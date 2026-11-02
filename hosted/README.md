@@ -149,6 +149,7 @@ schema. Every `$ref` is inlined.
 | `scripts/` | generate, check-drift, schemas-refresh |
 | `test/` | Behavior tests (`node --test`) |
 | `wrangler.jsonc` | Worker config |
+| `.nvmrc` | The Node major the deploy needs (22) |
 
 ## Configuration
 
@@ -163,10 +164,29 @@ From the VM only, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
 the environment:
 
 ```bash
-make hosted-deploy   # hosted-check, then npx wrangler@4.156.0 deploy
+make hosted-deploy   # Node check, hosted-check, then the locked wrangler deploy
 ```
 
-wrangler 4.156 needs Node 22 or later.
+wrangler is a pinned devDependency (`package.json`, locked in
+`package-lock.json`), so the deploy runs `./node_modules/.bin/wrangler` from
+`make hosted-install` and never downloads one. To run it by hand, use that
+path or `npx --no-install wrangler`, never `npx --yes wrangler@...`; for
+example, to build the bundle without credentials:
+
+```bash
+cd hosted && ./node_modules/.bin/wrangler deploy --dry-run --outdir /tmp/blowhorn-mcp-hosted-dry
+```
+
+Node versions are split:
+
+- **Deploy: Node 22 or later**, the major in `.nvmrc` (`nvm use` in
+  `hosted/`). wrangler 4.156 needs it. On an older Node, `make hosted-deploy`
+  stops before wrangler runs, with one sentence naming the version.
+- **Everything else: Node 20 or later**, `engines.node` in `package.json`.
+  `make hosted-install`, `make hosted-generate` and `make hosted-check` (the
+  Worker tests) run on Node 20, and CI checks that. On Node 20, `npm ci`
+  warns `EBADENGINE` for wrangler and two of its dependencies;
+  `make hosted-install` keeps that a warning.
 
 `wrangler.jsonc` has no routes; the `mcp.blowhorn.ai` custom domain is
 attached through the Cloudflare API. `workers_dev` and preview URLs are off.
