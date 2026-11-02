@@ -202,9 +202,25 @@ function logo() {
 
 const TARBALL = ["LICENSE", "README.md", "bin/blowhorn-mcp.js", "lib/launcher-common.js", "package.json"];
 
+// The file paths in `npm pack --dry-run --json` output for package `name`.
+// npm 10 and 11 print an array of packs; npm 12 prints an object keyed by
+// package name. Throws on any other shape rather than guessing.
+function packFiles(out, name) {
+  const parsed = JSON.parse(out);
+  const entry = Array.isArray(parsed) ? parsed.find((p) => p && p.name === name) : parsed && parsed[name];
+  if (!entry || !Array.isArray(entry.files)) throw new Error(`npm pack --json: no files list for ${name} in its output`);
+  return entry.files.map((f) => f.path).sort();
+}
+
 function pack() {
   const out = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  const files = JSON.parse(out)[0].files.map((f) => f.path).sort();
+  const name = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).name;
+  let files;
+  try {
+    files = packFiles(out, name);
+  } catch (e) {
+    fail(e.message);
+  }
   const extra = files.filter((f) => !TARBALL.includes(f));
   const missing = TARBALL.filter((f) => !files.includes(f));
   if (extra.length || missing.length) {
@@ -220,7 +236,7 @@ function pack() {
 
 const CHECKS = { drift, copy, skill, facts, logo, pack };
 
-module.exports = { pngSize, frontmatter, factProblems, RULES, rulesFor };
+module.exports = { pngSize, frontmatter, factProblems, packFiles, RULES, rulesFor };
 
 if (require.main === module) {
   const names = process.argv.slice(2);

@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const { pngSize, frontmatter, factProblems, RULES, rulesFor } = require("../scripts/check.js");
+const { pngSize, frontmatter, factProblems, packFiles, RULES, rulesFor } = require("../scripts/check.js");
 
 const broken = (line) => RULES.filter(([, re]) => re.test(line)).map(([rule]) => rule);
 
@@ -17,6 +17,14 @@ test("pngSize reads width and height from the IHDR chunk, and null for anything 
 test("frontmatter reads the leading --- block, and null when there is none", () => {
   assert.deepStrictEqual(frontmatter("---\nname: blowhorn\ndescription: \"Use it.\"\n---\n# Body\n"), { name: "blowhorn", description: "Use it." });
   assert.strictEqual(frontmatter("# No frontmatter\n"), null);
+});
+
+test("packFiles reads npm pack --json output from npm 10 and 11 (an array) and npm 12 (keyed by name)", () => {
+  const files = [{ path: "package.json" }, { path: "LICENSE" }];
+  assert.deepStrictEqual(packFiles(JSON.stringify([{ name: "blowhorn-mcp", files }]), "blowhorn-mcp"), ["LICENSE", "package.json"]);
+  assert.deepStrictEqual(packFiles(JSON.stringify({ "blowhorn-mcp": { name: "blowhorn-mcp", files } }), "blowhorn-mcp"), ["LICENSE", "package.json"]);
+  assert.throws(() => packFiles(JSON.stringify({ other: { files } }), "blowhorn-mcp"), /no files list for blowhorn-mcp/);
+  assert.throws(() => packFiles(JSON.stringify([{ name: "blowhorn-mcp" }]), "blowhorn-mcp"), /no files list for blowhorn-mcp/);
 });
 
 test("copy rules catch what they forbid and pass plain copy", () => {
