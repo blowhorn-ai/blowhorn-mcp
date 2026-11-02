@@ -10,10 +10,45 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  // Wrangler's anonymous usage telemetry is off for every deploy from here.
+  "send_metrics": false,
   "vars": {
     "CLOUD_API_BASE": "https://cloud.blowhorn.ai",
     "ALLOWED_ORIGINS": ""
   },
+  // Rate limits on /mcp (src/ratelimit.js, README.md, Rate limits). A refused
+  // request answers 429 with Retry-After and blowhorn-mcp-1010, and is never
+  // sent to Cloud or recorded. Counters are per Cloudflare location, so the
+  // limits are approximate. period is 10 or 60 seconds; namespace_id is a
+  // string integer, unique in the Cloudflare account. Each limit lives only
+  // here (and in README.md's table, which test/ratelimit.test.js holds to
+  // it). LIMITS in src/ratelimit.js names each binding with its period and
+  // cause; the test fails when a binding is missing or its period differs.
+  // A missing binding lets requests through and logs ratelimit_unbound.
+  "ratelimits": [
+    // Per caller: keyed by the hex SHA-256 of the bearer token, never the
+    // token itself. Checked once the token parses, before any Cloud call;
+    // only tools/call messages count, never initialize, tools/list or ping.
+    {
+      "name": "RATE_LIMIT_CALLER",
+      "namespace_id": "41301",
+      "simple": { "limit": 60, "period": 60 }
+    },
+    // Per network address: keyed by CF-Connecting-IP (an IPv6 address by its
+    // /64). Checked before authentication on every /mcp request; a request it
+    // refuses gets no auth work and no Cloud call. It is the only bound on a
+    // client that rotates made-up tokens, since each new token gets its own
+    // caller bucket: one address can still send up to its limit a minute of
+    // requests that reach Cloud and are refused there with 401. Everyone
+    // behind one egress address shares it, so it sits well above the caller
+    // limit times the about 4 requests a stateless client sends per tool
+    // call, leaving room for several such clients behind one NAT.
+    {
+      "name": "RATE_LIMIT_ADDRESS",
+      "namespace_id": "41302",
+      "simple": { "limit": 1200, "period": 60 }
+    }
+  ],
   // Invocation logs (Cloudflare's per-request metadata) are off, so Workers
   // Logs holds only the gateway's explicit console lines (README.md, Logs).
   "observability": {

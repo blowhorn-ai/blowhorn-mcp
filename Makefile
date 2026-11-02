@@ -88,7 +88,8 @@ hosted-check: hosted/node_modules/@modelcontextprotocol/sdk/package.json
 	node hosted/scripts/check-drift.js
 	cd hosted && node --test test/*.test.js
 
-## hosted-schemas-refresh: re-download hosted/schemas/vendor/ at the pinned commit (network).
+## hosted-schemas-refresh: re-download hosted/schemas/vendor/ at the pinned commits (network).
+## blowhorn-ai/blowhorn is private: run it with GITHUB_TOKEN=$(gh auth token).
 hosted-schemas-refresh: hosted/node_modules/@modelcontextprotocol/sdk/package.json
 	node hosted/scripts/schemas-refresh.js
 	$(MAKE) hosted-generate

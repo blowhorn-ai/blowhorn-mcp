@@ -1,0 +1,238 @@
+{
+  "$comment": "The hosted MCP gateway's error codes (blowhorn-ai/blowhorn internal/design/structured-error-codes.md), in the shape of blowhorn-ai/blowhorn's engine registry. Literal text only; nothing is built at run time. Every definition validates against the vendored ErrorDefinition construct (hosted/schemas/vendor/blowhorn/schemas/dist/ErrorDefinition.schema.json), checked by make hosted-check. The numbers are provisional until the registry (blowhorn-ai/blowhorn#1662) allocates them. No remediation carries an action: only a person or their client can do any of them. src/errors.js maps each gateway outcome to its code; an activity event's description gives its definition's shortDescription, the only copy of that text, and a 429's error.data is the blowhorn-mcp-1010 definition with only the refusing limit's cause. Numbers are never reused; nextErrorCode is one past the highest, checked by make hosted-check.",
+  "component": {"type": "blowhorn", "name": "mcp"},
+  "nextErrorCode": 1011,
+  "definitions": [
+    {
+      "code": "blowhorn-mcp-1000",
+      "moniker": "ErrUnknownTool",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "warning",
+      "shortDescription": "The tool is not one this gateway offers.",
+      "longDescription": "A tools/call named a tool that is not in the gateway's catalog. The catalog is generated from the vendored meshery/schemas operations and holds only reads, so nothing was sent to Blowhorn Cloud.",
+      "probableCauses": [
+        {
+          "id": "tool-not-offered",
+          "description": "The client asked for a tool this gateway does not offer, or mistyped its name.",
+          "remediations": [
+            {"id": "list-tools", "description": "Ask for the tool list again and use one of the names it returns."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1000/"
+    },
+    {
+      "code": "blowhorn-mcp-1001",
+      "moniker": "ErrInvalidArguments",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "warning",
+      "shortDescription": "The arguments did not match the tool's input schema.",
+      "longDescription": "The gateway checks every call's arguments against the tool's input schema before it sends anything. These did not pass, so nothing was sent to Blowhorn Cloud. The answer names the failing locations, never the values.",
+      "probableCauses": [
+        {
+          "id": "argument-mismatch",
+          "description": "An argument is missing, unknown, or of the wrong type or size.",
+          "remediations": [
+            {"id": "fix-arguments", "description": "Check the argument names and limits in the tool list, then send the call again."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1001/"
+    },
+    {
+      "code": "blowhorn-mcp-1002",
+      "moniker": "ErrRequestRefused",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "warning",
+      "shortDescription": "The gateway refused to send the request.",
+      "longDescription": "The arguments passed the tool's schema, but the request they make is one the gateway never sends, such as a path value that is not one segment or a URL over 8 KB. Nothing was sent to Blowhorn Cloud.",
+      "probableCauses": [
+        {
+          "id": "bad-path-value",
+          "description": "A path value is not a single valid segment.",
+          "remediations": [
+            {"id": "one-resource", "description": "Send a value that names one resource."}
+          ]
+        },
+        {
+          "id": "url-too-long",
+          "description": "The request URL would be over 8 KB.",
+          "remediations": [
+            {"id": "shorter-arguments", "description": "Send shorter arguments."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1002/"
+    },
+    {
+      "code": "blowhorn-mcp-1003",
+      "moniker": "ErrCloudRejected",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "warning",
+      "shortDescription": "Blowhorn Cloud answered with a client error.",
+      "longDescription": "The gateway sent the call to Blowhorn Cloud with the caller's own token, and Cloud answered with a 4xx status. The tool result carries Cloud's message.",
+      "probableCauses": [
+        {
+          "id": "not-found",
+          "description": "The identifier does not exist.",
+          "remediations": [
+            {"id": "check-identifiers", "description": "Check the identifiers in the call."}
+          ]
+        },
+        {
+          "id": "no-access",
+          "description": "Your account cannot read it in the organization given.",
+          "remediations": [
+            {"id": "check-organization", "description": "Check organizationId, and that your account can access the resource there."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1003/"
+    },
+    {
+      "code": "blowhorn-mcp-1004",
+      "moniker": "ErrCloudFailed",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "Blowhorn Cloud answered with a server error.",
+      "longDescription": "The gateway sent the call to Blowhorn Cloud, and Cloud answered with a 5xx status. The call is a read, so trying it again is safe.",
+      "probableCauses": [
+        {
+          "id": "cloud-error",
+          "description": "Blowhorn Cloud had a problem handling the request.",
+          "remediations": [
+            {"id": "try-again", "description": "Try again in a few minutes."},
+            {"id": "contact-support", "description": "If it keeps failing, contact Blowhorn support."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1004/"
+    },
+    {
+      "code": "blowhorn-mcp-1005",
+      "moniker": "ErrCloudTimeout",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "Blowhorn Cloud did not answer in time.",
+      "longDescription": "The gateway gives each call to Blowhorn Cloud 20 seconds, for the status and the whole body. Cloud's answer did not arrive in that time, so the gateway stopped waiting.",
+      "probableCauses": [
+        {
+          "id": "cloud-slow",
+          "description": "Blowhorn Cloud was slow to answer.",
+          "remediations": [
+            {"id": "try-again", "description": "Try again in a few minutes."}
+          ]
+        },
+        {
+          "id": "call-too-big",
+          "description": "The call asked for too much at once.",
+          "remediations": [
+            {"id": "smaller-page", "description": "Ask for a smaller page of results."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1005/"
+    },
+    {
+      "code": "blowhorn-mcp-1006",
+      "moniker": "ErrCloudUnreachable",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "The gateway could not reach Blowhorn Cloud.",
+      "longDescription": "The gateway could not open a connection to Blowhorn Cloud, or the connection failed before an answer came back. The call is a read, so trying it again is safe.",
+      "probableCauses": [
+        {
+          "id": "cloud-unavailable",
+          "description": "Blowhorn Cloud or the network between it and the gateway was unavailable.",
+          "remediations": [
+            {"id": "try-again", "description": "Try again in a few minutes."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1006/"
+    },
+    {
+      "code": "blowhorn-mcp-1007",
+      "moniker": "ErrCloudRedirect",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "Blowhorn Cloud answered with a redirect, which the gateway does not follow.",
+      "longDescription": "The gateway never follows a redirect, so the caller's token can never be sent anywhere but Blowhorn Cloud's API. Cloud, or something in front of it, answered with one.",
+      "probableCauses": [
+        {
+          "id": "endpoint-moved",
+          "description": "Blowhorn Cloud moved the endpoint, or a proxy in front of it redirected the call.",
+          "remediations": [
+            {"id": "try-again", "description": "Try again in a few minutes."},
+            {"id": "contact-support", "description": "If it keeps failing, contact Blowhorn support."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1007/"
+    },
+    {
+      "code": "blowhorn-mcp-1008",
+      "moniker": "ErrResponseTooLarge",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "Blowhorn Cloud's answer was too large to return.",
+      "longDescription": "The gateway returns at most 2 MB of Blowhorn Cloud's answer to one call. This answer was larger, so the gateway stopped reading it and returned nothing from it.",
+      "probableCauses": [
+        {
+          "id": "too-much-data",
+          "description": "The call matched more data than the gateway returns in one answer.",
+          "remediations": [
+            {"id": "narrow-call", "description": "Ask for a smaller page of results, or add filters to narrow the call."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1008/"
+    },
+    {
+      "code": "blowhorn-mcp-1009",
+      "moniker": "ErrResponseNotJson",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "Blowhorn Cloud's answer was not JSON.",
+      "longDescription": "Every Blowhorn Cloud API the gateway calls answers with JSON. This answer did not parse as JSON, so the gateway returned none of it.",
+      "probableCauses": [
+        {
+          "id": "unexpected-body",
+          "description": "Blowhorn Cloud answered with an unexpected body, or a proxy answered in its place.",
+          "remediations": [
+            {"id": "try-again", "description": "Try again in a few minutes."},
+            {"id": "contact-support", "description": "If it keeps failing, contact Blowhorn support."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1009/"
+    },
+    {
+      "code": "blowhorn-mcp-1010",
+      "moniker": "ErrRateLimited",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "warning",
+      "shortDescription": "Too many requests: the gateway's rate limit refused this one.",
+      "longDescription": "The gateway limits how many tool calls one token can make, and how many requests one network address can send, in a minute, so a runaway client cannot flood Blowhorn Cloud or the activity feed. This request was over a limit, so nothing was sent to Cloud and nothing was recorded in your activity. The Retry-After header says how many seconds to wait.",
+      "probableCauses": [
+        {
+          "id": "too-many-calls",
+          "description": "This token made more tool calls than the per-minute limit allows, often an agent calling a tool in a loop.",
+          "remediations": [
+            {"id": "wait-retry-after", "description": "Wait the number of seconds in the Retry-After header, then send the call again."},
+            {"id": "batch-calls", "description": "Send fewer, larger calls: for example, ask for bigger pages instead of many small ones."}
+          ]
+        },
+        {
+          "id": "shared-address",
+          "description": "Requests from every client on this network address count together, and together they passed the per-address limit.",
+          "remediations": [
+            {"id": "wait-retry-after", "description": "Wait the number of seconds in the Retry-After header, then send the call again."},
+            {"id": "fewer-requests-from-address", "description": "Send fewer requests from this address, for example by reusing one session instead of initializing before every call."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1010/"
+    }
+  ]
+}

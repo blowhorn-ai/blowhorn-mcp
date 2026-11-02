@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import test from "node:test";
 import assert from "node:assert";
+import { definition } from "../src/errors.js";
 import { eventProblems, operationId, postEvent, toolEvent } from "../src/events.js";
 
 const TOKEN = "events-test-token-0123456789";
@@ -129,8 +130,19 @@ test("a failure carries a MeshkitError-shaped error, and its text stays out of t
     assert.ok(!event.description.includes(error.error), outcome);
     assert.ok(!event.description.includes(error.probableCause[0]), outcome);
   }
-  assert.match(eventFor("cloud_failed").description, /Cloud answered 500\.$/);
-  assert.match(eventFor("cloud_rejected").description, /Cloud answered 404\.$/);
+  assert.strictEqual(eventFor("cloud_failed").description, "getEvents through the hosted MCP server failed with HTTP 500. Blowhorn Cloud answered with a server error.");
+  assert.strictEqual(eventFor("cloud_rejected").description, "getEvents through the hosted MCP server failed with HTTP 404. Blowhorn Cloud answered with a client error.");
+  assert.strictEqual(eventFor("timeout").description, "getEvents through the hosted MCP server failed. Blowhorn Cloud did not answer in time.");
+});
+
+test("a failure's description gives its code's shortDescription as the reason, and a missing message falls back to it", () => {
+  for (const outcome of Object.keys(SEVERITY).filter((o) => o !== "ok")) {
+    const { shortDescription } = definition(outcome);
+    const { description, metadata } = eventFor(outcome);
+    const status = metadata.httpStatus ? ` with HTTP ${metadata.httpStatus}` : "";
+    assert.strictEqual(description, `getEvents through the hosted MCP server failed${status}. ${shortDescription}`, outcome);
+    assert.strictEqual(eventFor(outcome, { message: "" }).metadata.error.error, shortDescription, outcome);
+  }
 });
 
 test("the error codes are distinct, one per failing outcome", () => {

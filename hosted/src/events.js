@@ -12,6 +12,7 @@
 import { Validator } from "@cfworker/json-schema";
 import catalog from "./catalog.generated.json" with { type: "json" };
 import { USER_AGENT, VERSION, scrub } from "./cloud.js";
+import { CODES, definition } from "./errors.js";
 import { redact } from "./redact.js";
 
 export const CATEGORY = "mcp";
@@ -43,108 +44,35 @@ const SCHEMA = {
 };
 const VALIDATOR = new Validator(SCHEMA, "2020-12", false);
 
-/** The event level for each outcome: a caller's mistake or a refused call is a warning, a failure of Cloud or the path to it an error. */
+/*
+ * Each failing outcome's definition is in errors/mcp.json (src/errors.js): a
+ * code (`blowhorn-mcp-NNNN`), a severity, and probable causes that each carry
+ * their own remediations, so a fix always names the cause it answers. On the
+ * wire metadata.error is the released MeshKit shape (meshery/schemas
+ * MeshkitError), whose flat probableCause and suggestedRemediation lists are
+ * derived from the definition until the nested error instance
+ * (meshery/schemas#1334) ships. A failure's description gives its
+ * definition's shortDescription as the reason, so each text has one copy.
+ *
+ * FAILURES are the failing outcomes a tool call event can record: every
+ * outcome with a code but rate_limited, a refused request, which is not a
+ * tool call (src/ratelimit.js).
+ */
+const FAILURES = Object.freeze(Object.keys(CODES).filter((outcome) => outcome !== "rate_limited"));
+
+/** The event level for each outcome: informational on success, else its definition's severity (a caller's mistake or a refused call is a warning, a failure of Cloud or the path to it an error). */
 const SEVERITY = Object.freeze({
   ok: "informational",
-  invalid_arguments: "warning",
-  unknown_tool: "warning",
-  refused: "warning",
-  cloud_rejected: "warning",
-  cloud_failed: "error",
-  timeout: "error",
-  unreachable: "error",
-  redirect: "error",
-  too_large: "error",
-  not_json: "error",
+  ...Object.fromEntries(FAILURES.map((outcome) => [outcome, definition(outcome).severity])),
 });
 
-/*
- * One definition per failing outcome, in the shape of
- * internal/design/structured-error-codes.md in blowhorn-ai/blowhorn: a code
- * (`blowhorn-mcp-NNNN`) and probable causes that each carry their
- * own remediations, so a fix always names the cause it answers. The codes are
- * provisional until that design's registry (blowhorn-ai/blowhorn#1662)
- * allocates them. On the wire metadata.error is the released MeshKit shape
- * (meshery/schemas MeshkitError), whose flat probableCause and
- * suggestedRemediation lists are derived from these definitions until the
- * nested error instance (meshery/schemas#1334) ships. `reason` is the short
- * clause the description gives.
- */
-const AGAIN = { id: "try-again", description: "Try again in a few minutes." };
-const SUPPORT = { id: "contact-support", description: "If it keeps failing, contact Blowhorn support." };
-const FAILURES = Object.freeze({
-  unknown_tool: {
-    code: "blowhorn-mcp-1000",
-    reason: "the tool is not one this gateway offers.",
-    causes: [
-      { id: "tool-not-offered", description: "The client asked for a tool this gateway does not offer, or mistyped its name.", remediations: [{ id: "list-tools", description: "Ask for the tool list again and use one of the names it returns." }] },
-    ],
-  },
-  invalid_arguments: {
-    code: "blowhorn-mcp-1001",
-    reason: "the arguments did not match the tool's input schema.",
-    causes: [
-      { id: "argument-mismatch", description: "An argument is missing, unknown, or of the wrong type or size.", remediations: [{ id: "fix-arguments", description: "Check the argument names and limits in the tool list, then send the call again." }] },
-    ],
-  },
-  refused: {
-    code: "blowhorn-mcp-1002",
-    reason: "the gateway refused to send the request.",
-    causes: [
-      { id: "bad-path-value", description: "A path value is not a single valid segment.", remediations: [{ id: "one-resource", description: "Send a value that names one resource." }] },
-      { id: "url-too-long", description: "The request URL would be over 8 KB.", remediations: [{ id: "shorter-arguments", description: "Send shorter arguments." }] },
-    ],
-  },
-  cloud_rejected: {
-    code: "blowhorn-mcp-1003",
-    reason: "Cloud answered with a client error.",
-    causes: [
-      { id: "not-found", description: "The identifier does not exist.", remediations: [{ id: "check-identifiers", description: "Check the identifiers in the call." }] },
-      { id: "no-access", description: "Your account cannot read it in the organization given.", remediations: [{ id: "check-organization", description: "Check organizationId, and that your account can access the resource there." }] },
-    ],
-  },
-  cloud_failed: {
-    code: "blowhorn-mcp-1004",
-    reason: "Cloud answered with a server error.",
-    causes: [{ id: "cloud-error", description: "Blowhorn Cloud had a problem handling the request.", remediations: [AGAIN, SUPPORT] }],
-  },
-  timeout: {
-    code: "blowhorn-mcp-1005",
-    reason: "Cloud did not answer in time.",
-    causes: [
-      { id: "cloud-slow", description: "Blowhorn Cloud was slow to answer.", remediations: [AGAIN] },
-      { id: "call-too-big", description: "The call asked for too much at once.", remediations: [{ id: "smaller-page", description: "Ask for a smaller page of results." }] },
-    ],
-  },
-  unreachable: {
-    code: "blowhorn-mcp-1006",
-    reason: "the gateway could not reach Cloud.",
-    causes: [{ id: "cloud-unavailable", description: "Blowhorn Cloud or the network between it and the gateway was unavailable.", remediations: [AGAIN] }],
-  },
-  redirect: {
-    code: "blowhorn-mcp-1007",
-    reason: "Cloud answered with a redirect, which the gateway does not follow.",
-    causes: [{ id: "endpoint-moved", description: "Blowhorn Cloud moved the endpoint, or a proxy in front of it redirected the call.", remediations: [AGAIN, SUPPORT] }],
-  },
-  too_large: {
-    code: "blowhorn-mcp-1008",
-    reason: "Cloud's answer was too large to return.",
-    causes: [{ id: "too-much-data", description: "The call matched more data than the gateway returns in one answer.", remediations: [{ id: "narrow-call", description: "Ask for a smaller page of results, or add filters to narrow the call." }] }],
-  },
-  not_json: {
-    code: "blowhorn-mcp-1009",
-    reason: "Cloud's answer was not JSON.",
-    causes: [{ id: "unexpected-body", description: "Blowhorn Cloud answered with an unexpected body, or a proxy answered in its place.", remediations: [AGAIN, SUPPORT] }],
-  },
-});
-
-/** The MeshkitError for a failing outcome: the flat MeshKit lists derived from its causes and their remediations. */
+/** The MeshkitError for a failing outcome's definition: the flat MeshKit lists derived from its causes and their remediations. */
 function meshkitError(failure, message) {
-  const remediations = failure.causes.flatMap((c) => c.remediations.map((r) => r.description));
+  const remediations = failure.probableCauses.flatMap((c) => c.remediations.map((r) => r.description));
   return {
     error: message,
     code: failure.code,
-    probableCause: failure.causes.map((c) => c.description),
+    probableCause: failure.probableCauses.map((c) => c.description),
     suggestedRemediation: [...new Set(remediations)],
   };
 }
@@ -161,11 +89,15 @@ export function operationId(request) {
   return crypto.randomUUID();
 }
 
-/** The description: one plain sentence, with the short reason only for a failure. */
+/**
+ * The description: for a success one sentence with the duration; for a
+ * failure one saying so (with Cloud's HTTP status when Cloud answered with an
+ * error), then the definition's shortDescription.
+ */
 function describe(tool, outcome, httpStatus, durationMs) {
   if (outcome === "ok") return `Called ${tool} through the hosted MCP server in ${durationMs} ms.`;
-  const reason = outcome === "cloud_rejected" || outcome === "cloud_failed" ? `Cloud answered ${httpStatus}.` : FAILURES[outcome].reason;
-  return `${tool} through the hosted MCP server failed: ${reason}`;
+  const status = outcome === "cloud_rejected" || outcome === "cloud_failed" ? ` with HTTP ${httpStatus}` : "";
+  return `${tool} through the hosted MCP server failed${status}. ${definition(outcome).shortDescription}`;
 }
 
 /** `value` with every string, key included, that holds `token` cleaned, so the caller's token is never recorded. */
@@ -200,8 +132,9 @@ export function toolEvent({ tool, outcome, httpStatus = 0, durationMs, requestId
     metadata.argumentNames = Object.keys(args).slice(0, MAX_NAMES).map((k) => k.slice(0, MAX_NAME_CHARS));
   }
   if (outcome !== "ok") {
-    const failure = FAILURES[outcome];
-    metadata.error = meshkitError(failure, String(message || failure.reason).slice(0, MAX_ERROR_CHARS));
+    if (!FAILURES.includes(outcome)) throw new Error(`no tool call event for outcome ${outcome}`);
+    const failure = definition(outcome);
+    metadata.error = meshkitError(failure, String(message || failure.shortDescription).slice(0, MAX_ERROR_CHARS));
   }
   return scrubDeep(
     {
