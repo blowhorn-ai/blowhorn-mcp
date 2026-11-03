@@ -5,6 +5,8 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+## 0.1.4
+
 - README: the "npm launcher (coming)" section is now "npm": `blowhorn-mcp`
   is on npm and in the official MCP Registry, with the `npx -y blowhorn-mcp`
   install for JSON configs and Claude Code. `llms-install.md` and
