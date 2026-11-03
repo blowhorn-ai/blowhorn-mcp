@@ -21,6 +21,7 @@ jobs:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
+            # Slack channel ID for repository star notifications
             channel: CSK7N9TGX
             type: "mrkdwn"
             text: "<https://github.com/${{ github.actor }}|${{ github.actor }}> just starred <https://github.com/${{ github.repository }}/stargazers|${{ github.repository }}> bringing the total ⭐️ count up to: ${{ env.STARS }}"
@@ -39,5 +40,6 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload-templated: true
           payload: |
+            # Slack channel ID for good-first-issue announcements
             channel: C019426UBNY
             text: ":new: Good first issue up for grabs: <{{env.ISSUE_URL}}|{{env.ISSUE_TITLE}}>"
