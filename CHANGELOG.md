@@ -5,6 +5,12 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- README: the "npm launcher (coming)" section is now "npm": `blowhorn-mcp`
+  is on npm and in the official MCP Registry, with the `npx -y blowhorn-mcp`
+  install for JSON configs and Claude Code. `llms-install.md` and
+  `AGENTS.md` say the same, and `make check` no longer requires npm and
+  MCP Registry availability to be future tense.
+
 ## 0.1.3
 
 - The README, the long description and the Blowhorn skill name the risky

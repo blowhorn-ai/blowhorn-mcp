@@ -91,6 +91,5 @@ yes before confirming.
 - Setup guide: <https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/>
 - Reference: <https://blowhorn.ai/docs/reference/mcp-server/>
 
-Once the `blowhorn-mcp` npm package is published, `"command": "npx"` with
-`"args": ["-y", "blowhorn-mcp"]` will work as well. Until then, use the
-absolute path above.
+The `blowhorn-mcp` npm package is published, so `"command": "npx"` with
+`"args": ["-y", "blowhorn-mcp"]` works as well, on Node.js 20 or later.
