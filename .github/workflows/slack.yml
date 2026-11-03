@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Get current star count
         run: |
-          echo "STARS=$(curl --silent 'https://api.github.com/repos/${{ github.repository }}' -H 'Accept: application/vnd.github.preview' | jq '.stargazers_count')" >> $GITHUB_ENV
+          echo "STARS=$(curl --fail --silent 'https://api.github.com/repos/${{ github.repository }}' -H 'Accept: application/vnd.github.preview' | jq '.stargazers_count')" >> $GITHUB_ENV
       - name: Notify Slack
         uses: slackapi/slack-github-action@v2.1.1
         with:
