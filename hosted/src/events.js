@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * The Cloud activity event each tool call records. Blowhorn Cloud stores it
  * through its createEvent API (POST /api/events), so the caller sees the call

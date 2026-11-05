@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Node module register hook. `make hosted-check` loads this with --import
  * before the tests, so `import { DurableObject } from "cloudflare:workers"`

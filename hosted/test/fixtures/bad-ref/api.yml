@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # A fixture for test/generate.test.js: an exposed GET whose parameter $ref has no target.
 openapi: 3.0.0
 info:

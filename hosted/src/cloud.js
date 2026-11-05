@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Calls to the Cloud API, built only from the generated catalog. A request's
  * method, path and query keys all come from a catalog entry; the caller only

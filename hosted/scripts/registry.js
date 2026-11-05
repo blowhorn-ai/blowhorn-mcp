@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Checks hosted/errors/mcp.json, the gateway's error code registry: every
  * definition against the vendored ErrorDefinition construct
