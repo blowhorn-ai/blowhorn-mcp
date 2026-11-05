@@ -10,9 +10,17 @@ import { eventProblems } from "../src/events.js";
 const TOKEN = "fake-test-token-0123456789";
 const ORG = "11111111-2222-4333-8444-555555555555";
 const ITEM = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-/** A fake Workers Rate Limiting binding that never refuses: these tests want no limiting (test/ratelimit.test.js covers it). */
-const UNLIMITED = Object.freeze({ limit: async () => ({ success: true }) });
-const ENV = { CLOUD_API_BASE: "https://cloud.blowhorn.ai", ALLOWED_ORIGINS: "https://app.example.test", RATE_LIMIT_ADDRESS: UNLIMITED, RATE_LIMIT_CALLER: UNLIMITED };
+/** A fake RateLimiter namespace that never refuses: these tests want no limiting (test/ratelimit.test.js covers it). */
+const UNLIMITED = Object.freeze({
+  idFromName: (name) => name,
+  get: () => ({ limit: async () => ({ success: true, retryAfter: 60 }) }),
+});
+const ENV = {
+  CLOUD_API_BASE: "https://cloud.blowhorn.ai",
+  ALLOWED_ORIGINS: "https://app.example.test",
+  RATE_LIMITER: UNLIMITED,
+  RATE_LIMITS: JSON.stringify({ address: { limit: 1200, period: 60 }, caller: { limit: 60, period: 60 } }),
+};
 const MCP = "https://mcp.blowhorn.ai/mcp";
 const ACCEPT = "application/json, text/event-stream";
 const EVENTS = "https://cloud.blowhorn.ai/api/events";
@@ -92,9 +100,10 @@ test.after(() => {
   assert.ok(bodies.length > 20);
 });
 
-test("the main module exports only the default handler, as Workers require", () => {
-  assert.deepStrictEqual(Object.keys(main), ["default"]);
+test("the main module exports the default handler and the RateLimiter Durable Object", () => {
+  assert.deepStrictEqual(Object.keys(main).sort(), ["RateLimiter", "default"]);
   assert.strictEqual(typeof main.default.fetch, "function");
+  assert.strictEqual(typeof main.RateLimiter, "function");
 });
 
 test("GET /healthz answers without calling Cloud", async (t) => {

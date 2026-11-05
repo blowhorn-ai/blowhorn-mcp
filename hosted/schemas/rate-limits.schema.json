@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/hosted/schemas/rate-limits.schema.json",
+  "title": "Hosted gateway rate limits",
+  "description": "The object in wrangler.jsonc's RATE_LIMITS var (a JSON string). src/ratelimit.js reads it at request time. The Durable Object enforces it; this schema does not.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["address", "caller"],
+  "properties": {
+    "address": {
+      "description": "Requests per period for one CF-Connecting-IP (an IPv6 address by its /64), every /mcp request.",
+      "$ref": "#/$defs/window"
+    },
+    "caller": {
+      "description": "tools/call messages per period for one bearer token, keyed by its hex SHA-256.",
+      "$ref": "#/$defs/window"
+    }
+  },
+  "$defs": {
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["limit", "period"],
+      "properties": {
+        "limit": { "type": "integer", "minimum": 1 },
+        "period": { "description": "Fixed window length in seconds. 10 or 60, the periods Workers Rate Limiting used to allow.", "type": "integer", "enum": [10, 60] }
+      }
+    }
+  }
+}
