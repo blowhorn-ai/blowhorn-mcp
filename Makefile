@@ -86,7 +86,7 @@ hosted-generate: hosted/node_modules/@modelcontextprotocol/sdk/package.json
 ## hosted-check: catalog and vendor drift, then the gateway's tests.
 hosted-check: hosted/node_modules/@modelcontextprotocol/sdk/package.json
 	node hosted/scripts/check-drift.js
-	cd hosted && node --test test/*.test.js
+	cd hosted && node --import ./test/support/register.js --test test/*.test.js
 
 ## hosted-schemas-refresh: re-download hosted/schemas/vendor/ at the pinned commits (network).
 ## blowhorn-ai/blowhorn is private: run it with GITHUB_TOKEN=$(gh auth token).

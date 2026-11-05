@@ -10,6 +10,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import worker from "../src/index.js";
 import { definition } from "../src/errors.js";
 import { Validator } from "@cfworker/json-schema";
+import { DurableObject } from "cloudflare:workers";
 import { LIMITS, RATE_LIMITED, RATE_LIMITER_BINDING, RateLimiter, addressKey, callerKey, rateLimits } from "../src/ratelimit.js";
 import { errorDefinitionSchema, errorDefinitionValidator } from "../scripts/registry.js";
 
@@ -469,6 +470,10 @@ test("the 429 example in README.md is exactly what the caller limit sends", asyn
   const example = JSON.parse(section.match(/```json\n([\s\S]*?)\n```/)[1]);
   const res = await worker.fetch(rpc(...CALL), envWith({ caller: false }), {});
   assert.deepStrictEqual(await res.json(), example);
+});
+
+test("RateLimiter extends DurableObject so Workers expose limit as an RPC method", () => {
+  assert.ok(RateLimiter.prototype instanceof DurableObject);
 });
 
 test("RateLimiter counts a strict fixed window, persists it, and reports retryAfter", async (t) => {
