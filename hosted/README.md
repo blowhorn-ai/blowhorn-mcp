@@ -325,6 +325,12 @@ schema. Every `$ref` is inlined.
 
 ## Deploy
 
+CI deploys on every push to `master` that touches `hosted/**`
+(`.github/workflows/hosted-deploy.yml`, `production` environment), runs
+`make hosted-deploy`, then smoke-tests `/healthz` (200) and unauthenticated
+`/mcp` (401). It can also be run by hand with workflow_dispatch. The manual
+path below still works.
+
 From the VM only, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
 the environment:
 

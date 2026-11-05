@@ -1,0 +1,56 @@
+name: Hosted deploy
+
+# Deploys the interim gateway Worker (hosted/) on merge to master, then
+# smoke-tests https://mcp.blowhorn.ai. `make hosted-deploy` runs the Node
+# check, npm ci, and hosted-check before wrangler deploy, so this job runs
+# it once instead of paying for hosted-check twice. The same target stays
+# the manual and emergency path.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - hosted/**
+      - .github/workflows/hosted-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: make hosted-deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: hosted/.nvmrc
+          cache: npm
+          cache-dependency-path: hosted/package-lock.json
+      - run: make hosted-deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Smoke test
+        run: |
+          expect() {
+            local want=$1; shift
+            local got
+            got=$(curl -sS -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 3 --retry-all-errors "$@")
+            echo "$* -> $got (want $want)"
+            [[ "$got" =~ ^($want)$ ]]
+          }
+          base=https://mcp.blowhorn.ai
+          expect 200 "$base/healthz"
+          # GET /mcp is refused before auth with 405 (no SSE stream); never 5xx.
+          expect '401|405' "$base/mcp"
+          expect 401 -X POST -H 'content-type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}' "$base/mcp"
