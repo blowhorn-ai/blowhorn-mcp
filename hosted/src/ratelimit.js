@@ -33,6 +33,7 @@
  * in front of Cloud, so an outage must not become an unlimited gateway.
  * GET /healthz does not consult the limiter.
  */
+import { DurableObject } from "cloudflare:workers";
 import { definition } from "./errors.js";
 
 /** The Durable Object namespace on env. wrangler.jsonc binds this name. */
@@ -68,14 +69,13 @@ const UNBOUND = new Set();
  * is how many checks landed in it. Memory is the hot copy; storage is the
  * copy that survives eviction. SQLite-backed (`new_sqlite_classes`).
  */
-export class RateLimiter {
+export class RateLimiter extends DurableObject {
   constructor(ctx, env) {
-    this.ctx = ctx;
-    this.env = env;
+    super(ctx, env);
     this.window = null;
     this.count = 0;
-    this.loaded = ctx.blockConcurrencyWhile(async () => {
-      const stored = await ctx.storage.get("state");
+    this.loaded = this.ctx.blockConcurrencyWhile(async () => {
+      const stored = await this.ctx.storage.get("state");
       if (stored && Number.isInteger(stored.window) && Number.isInteger(stored.count) && stored.count >= 0) {
         this.window = stored.window;
         this.count = stored.count;
