@@ -37,10 +37,14 @@ Notes for coding agents working in this repo.
   then map its outcome in `hosted/src/errors.js` and add its row to the
   Error codes table in `hosted/README.md` (a test holds the table to
   both). Each rate limit lives
-  only in `ratelimits` in `hosted/wrangler.jsonc` (and the table in
-  `hosted/README.md`, which a test holds to it); `LIMITS` in
-  `hosted/src/ratelimit.js` keeps only the binding name, period and cause,
-  and a test fails when a binding or period differs. hosted/ is exempt
+  only in the `RATE_LIMITS` var in `hosted/wrangler.jsonc` (and the table in
+  `hosted/README.md`, which a test holds to it). The enforcer is the
+  `RateLimiter` Durable Object bound as `RATE_LIMITER` (a missing binding
+  fails closed); Cloudflare simple `ratelimits` bindings do not enforce
+  live. `LIMITS` in `hosted/src/ratelimit.js` keeps only each limit's
+  cause, and a test fails when the Durable Object binding, its
+  `new_sqlite_classes` migration, or a period differs.
+  `hosted/schemas/rate-limits.schema.json` is the config shape. hosted/ is exempt
   from the local-only copy rules, never from the others.
 - **Tests** run behavior (execute scripts and the launcher, parse output);
   never grep source code.

@@ -13,8 +13,9 @@
  * alongside the response with ctx.waitUntil and never awaited. Every /mcp
  * request but a preflight passes a per-address rate limit first, and a
  * tools/call with a token counts toward a per-caller limit before Cloud is
- * called (src/ratelimit.js). There is no SSE stream, no session and
- * no JSON-RPC batch.
+ * called (src/ratelimit.js). The limiter is one Durable Object, exported
+ * below; a missing binding fails closed. There is no SSE stream, no session
+ * and no JSON-RPC batch.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -25,10 +26,13 @@ import { Validator } from "@cfworker/json-schema";
 import { bearerToken } from "./auth.js";
 import { TOOLS, VERSION, callCloud, cloudBase } from "./cloud.js";
 import { operationId, postEvent, toolEvent } from "./events.js";
-import { addressKey, callerKey, refusal, refuses } from "./ratelimit.js";
+import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } from "./ratelimit.js";
 
-// Module-private: Workers treat every named export of the main module as an entrypoint.
+// Workers treat every named export of the main module as an entrypoint.
+// RateLimiter is the Durable Object class (wrangler.jsonc). Everything else
+// stays module-private, including NAME.
 const NAME = "blowhorn-mcp-hosted";
+export { RateLimiter };
 const MAX_REQUEST_BYTES = 1024 * 1024;
 
 const INSTRUCTIONS =
@@ -153,9 +157,11 @@ async function mcp(request, env, origin, events) {
   }
   // Before anything else, so a refused request gets no auth work or Cloud call. Its 429
   // answers id null: the body is not read yet.
-  if (await refuses(env, "address", addressKey(request.headers.get("CF-Connecting-IP")))) {
+  const addressLimit = await refuses(env, "address", addressKey(request.headers.get("CF-Connecting-IP")));
+  if (addressLimit.unavailable) return unavailable(cors);
+  if (addressLimit.refused) {
     log({ outcome: "rate_limited", limit: "address" });
-    return refusal("address", cors);
+    return refusal("address", cors, null, addressLimit.retryAfter);
   }
   if (request.method !== "POST") return rpcError(405, -32000, "Method not allowed: this stateless gateway answers POST only.", { Allow: "POST", ...cors });
 
@@ -192,9 +198,11 @@ async function mcp(request, env, origin, events) {
   // nothing is sent to Cloud or recorded for a refused request.
   if (parsedBody?.method === "tools/call") {
     const caller = await callerKey(token);
-    if (await refuses(env, "caller", caller)) {
+    const callerLimit = await refuses(env, "caller", caller);
+    if (callerLimit.unavailable) return unavailable(cors);
+    if (callerLimit.refused) {
       log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
-      return refusal("caller", cors, parsedBody.id);
+      return refusal("caller", cors, parsedBody.id, callerLimit.retryAfter);
     }
   }
 

@@ -48,8 +48,8 @@ repo is about.
   with `Retry-After`. See [Rate limits](#rate-limits).
 - **Logs.** Workers Logs holds only the gateway's own lines: method, tool
   name, status, outcome and duration; `auth_failed` for a missing or
-  malformed token; `rate_limited`, `ratelimit_failed` and
-  `ratelimit_unbound` from the [rate limits](#rate-limits); and the event lines in
+  malformed token; `rate_limited`, `ratelimit_failed`,
+  `ratelimit_unbound` and `ratelimit_misconfigured` from the [rate limits](#rate-limits); and the event lines in
   [What the gateway records](#what-the-gateway-records). Cloudflare's
   invocation logs, which record request metadata, are turned off in
   `wrangler.jsonc`.
@@ -69,14 +69,22 @@ claude mcp add --transport http blowhorn-cloud https://mcp.blowhorn.ai/mcp \
 
 ## Rate limits
 
-Two limits guard `/mcp`, Cloudflare Workers Rate Limiting bindings declared
-in `wrangler.jsonc` (`ratelimits`). `GET /healthz` and an `OPTIONS`
+Two limits guard `/mcp`. Cloudflare's simple Workers Rate Limiting bindings
+(`ratelimits`) do not enforce on a live worker
+([workers-sdk#16097](https://github.com/cloudflare/workers-sdk/issues/16097)),
+so they are not used. The enforcer is one Durable Object, `RateLimiter`
+(`src/ratelimit.js`), bound as `RATE_LIMITER` in `wrangler.jsonc`
+(`durable_objects`, migrated with `new_sqlite_classes`). Each key is its own
+object and a strict fixed window: an epoch-aligned counter in memory, written
+to the object's storage on every check. The counts and periods are config,
+the `RATE_LIMITS` var (a JSON string;
+`schemas/rate-limits.schema.json`). `GET /healthz` and an `OPTIONS`
 preflight are never limited.
 
-| Limit | Binding | Key | Allowed | Checked |
-|-------|---------|-----|---------|---------|
-| Per network address | `RATE_LIMIT_ADDRESS` | `CF-Connecting-IP`; an IPv6 address by its /64 | 1200 requests per 60 s | First, on every `/mcp` request, before the token is read |
-| Per caller | `RATE_LIMIT_CALLER` | The hex SHA-256 of the bearer token, never the token | 60 tool calls per 60 s | Once the token parses, before any Cloud call; only `tools/call` counts |
+| Limit | Config key | Key | Allowed | Checked |
+|-------|------------|-----|---------|---------|
+| Per network address | `address` | `CF-Connecting-IP`; an IPv6 address by its /64 | 1200 requests per 60 s | First, on every `/mcp` request, before the token is read |
+| Per caller | `caller` | The hex SHA-256 of the bearer token, never the token | 60 tool calls per 60 s | Once the token parses, before any Cloud call; only `tools/call` counts |
 
 The address limit counts every `/mcp` request, with or without a token: it
 is the only bound on a client that rotates through made-up tokens, since
@@ -101,9 +109,9 @@ refuses a batch (a JSON array) with its usual `400` before the caller limit,
 so a batch counts nothing; a single `tools/call` message counts one. A body
 that does not parse counts nothing and gets the usual `-32700` parse error.
 A refused request answers HTTP
-`429` with `Retry-After` set to the limit's period (the binding does not
-say how much of it is left), the usual CORS headers for an allowed
-`Origin`, and a JSON-RPC error. The caller limit's `429` answers the
+`429` with `Retry-After` set to the seconds left in the current window
+(at least 1; the Durable Object returns it), the usual CORS headers for an
+allowed `Origin`, and a JSON-RPC error. The caller limit's `429` answers the
 refused `tools/call`'s `id`, as below; the address limit's answers `id`
 `null`, since it refuses before the body is read:
 
@@ -151,25 +159,30 @@ server-error range and echoes HTTP 429. A refused request is never sent to
 Cloud and records no activity event. It logs one line,
 `{"outcome":"rate_limited","limit":"address"}`, or for the caller limit
 `"limit":"caller"` with `"caller"` set to the first 8 hex characters of the
-token's hash, never the token or the whole hash. If a binding fails, the
-request goes through and logs `ratelimit_failed` with the error's name. If
-a binding is missing from `env` (a deploy that dropped `ratelimits`, or a
-wrangler `env` block, which does not inherit them), the request goes
-through and the isolate logs one `ratelimit_unbound` line naming the
-binding. Either way the limits protect Cloud, they are not authentication.
+token's hash, never the token or the whole hash.
 
-The limits are approximate. Cloudflare counts per location and eventually
-consistently, so a burst spread across locations can get more through, and
-a few requests over the limit can pass before refusals start.
+The limiter fails closed. The simple bindings used to fail open, which is
+how a limiter that never enforces got to production; this one does not. If
+`RATE_LIMITER` is missing from `env`, or `RATE_LIMITS` is missing or not the
+shape in `schemas/rate-limits.schema.json`, the request is refused with
+HTTP `503` and a JSON-RPC `-32603` ("Gateway misconfigured: the rate limiter
+is unavailable."), nothing is sent to Cloud, and the isolate logs one
+`ratelimit_unbound` line naming the binding, or one
+`ratelimit_misconfigured` line. If the Durable Object throws, the request
+is refused the same way and every such failure logs `ratelimit_failed` with
+the error's name only, never the message, the key or the token. `GET
+/healthz` still answers, so a probe does not depend on the limiter. The
+limits protect Cloud; they are not authentication. A fixed window is exact
+inside the window and can still allow a full limit again as soon as the
+next window starts.
 
-Each limit lives only in `ratelimits` in `wrangler.jsonc`: edit it there,
+Each limit lives only in `RATE_LIMITS` in `wrangler.jsonc`: edit it there,
 and the table above to match (`test/ratelimit.test.js` fails when the two
-differ). `LIMITS` in `src/ratelimit.js` holds only what the code needs of
-each binding (its name, its period for `Retry-After`, and its cause), and
-the test fails when a binding is missing from `wrangler.jsonc` or declares
-another period. `period` is 10 or 60 seconds. `namespace_id` (`41301`,
-`41302`) is a string integer unique in the Cloudflare account: keep it when
-changing a limit, so the counters carry over.
+differ, and it fails when `RATE_LIMITER` or its `new_sqlite_classes`
+migration is missing). `LIMITS` in `src/ratelimit.js` holds only each
+limit's cause. `period` is 10 or 60 seconds. Changing a limit does not keep
+the old counter: the window id is `floor(now / period)`, so a new period is
+a new window.
 
 ## Revoke a leaked token
 
@@ -291,7 +304,8 @@ schema. Every `$ref` is inlined.
 | `src/cloud.js` | Request building, the GET-only dispatch, result shaping |
 | `src/events.js` | The activity event for each call, its validation and its POST |
 | `src/errors.js` | Each failing outcome's code in `errors/mcp.json` |
-| `src/ratelimit.js` | The rate limits, their keys and the 429 |
+| `src/ratelimit.js` | The RateLimiter Durable Object, its keys and the 429 |
+| `schemas/rate-limits.schema.json` | The `RATE_LIMITS` config shape |
 | `errors/mcp.json` | The error code registry |
 | `src/auth.js` | Bearer token parsing |
 | `src/redact.js` | Secret-named key redaction, a port of the Blowhorn engine's rule |
@@ -307,6 +321,7 @@ schema. Every `$ref` is inlined.
 |-----|---------|---------|
 | `CLOUD_API_BASE` | `https://cloud.blowhorn.ai` | Cloud API base; must be exactly `https://cloud.blowhorn.ai`, else the gateway refuses to serve |
 | `ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call `/mcp` |
+| `RATE_LIMITS` | (required) | JSON string: `address` and `caller` limits, enforced by the `RATE_LIMITER` Durable Object. See [Rate limits](#rate-limits) |
 
 ## Deploy
 

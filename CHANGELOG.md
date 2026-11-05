@@ -5,6 +5,14 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- `hosted/`: `/mcp` rate limits are a strict fixed-window Durable Object
+  (`RateLimiter`, bound as `RATE_LIMITER`) instead of Cloudflare's simple
+  `ratelimits` bindings, which do not enforce on a live worker
+  (cloudflare/workers-sdk#16097). Counts stay 1200 requests / 60 s per
+  address and 60 tool calls / 60 s per caller, in the `RATE_LIMITS` var.
+  A missing binding or a limiter error fails closed with `503`. `Retry-After`
+  is the seconds left in the window (#13).
+
 ## 0.1.4
 
 - README: the "npm launcher (coming)" section is now "npm": `blowhorn-mcp`
