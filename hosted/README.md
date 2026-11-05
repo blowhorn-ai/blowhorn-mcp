@@ -311,7 +311,7 @@ schema. Every `$ref` is inlined.
 | `src/redact.js` | Secret-named key redaction, a port of the Blowhorn engine's rule |
 | `src/catalog.generated.json` | Generated tool catalog |
 | `scripts/` | generate, check-drift, schemas-refresh, registry (the error registry check), require-node (the deploy's Node check) |
-| `test/` | Behavior tests (`node --test`) |
+| `test/` | Behavior tests. `make hosted-check` runs `node --import ./test/support/register.js --test`, which resolves `cloudflare:workers` to the DurableObject stub in `test/support/` |
 | `wrangler.jsonc` | Worker config, the rate limits included |
 | `.nvmrc` | The Node major the deploy needs (22) |
 
