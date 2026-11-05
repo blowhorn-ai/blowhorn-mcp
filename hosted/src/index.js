@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * blowhorn-mcp-hosted: an INTERIM MCP gateway, served at
  * https://mcp.blowhorn.ai/mcp until Blowhorn Cloud serves /mcp itself

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # blowhorn-mcp: the npm launcher and every marketplace listing file.
 # `make check` is what CI runs; run it before every PR.
 

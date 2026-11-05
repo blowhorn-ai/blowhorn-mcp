@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Builds the gateway's tool catalog from the vendored meshery/schemas
  * OpenAPI files. Offline and deterministic: scripts/generate.js writes what

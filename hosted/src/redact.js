@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Replaces values under secret-named keys before a Cloud answer leaves the
  * gateway.

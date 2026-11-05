@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Part of `make hosted-check`: fails when a vendored schema's bytes differ
  * from hosted/schemas/vendor/SOURCES.json, when

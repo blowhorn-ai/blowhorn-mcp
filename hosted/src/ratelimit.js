@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Per-caller and per-address rate limits on /mcp. One enforcer: the
  * RateLimiter Durable Object bound as RATE_LIMITER (wrangler.jsonc,

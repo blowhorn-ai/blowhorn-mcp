@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // blowhorn-mcp-hosted: the interim read-only MCP gateway (see README.md).
 // Deployed with `make hosted-deploy` from the VM only. No routes block: the
 // mcp.blowhorn.ai custom domain is attached through the Cloudflare API.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * The caller's own Cloud API token, from `Authorization: Bearer <token>`.
  * The gateway keeps no credentials of its own: every call to Cloud carries

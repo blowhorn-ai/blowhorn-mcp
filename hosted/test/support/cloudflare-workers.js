@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * Stand-in for `cloudflare:workers` when the gateway tests run under Node.
  * test/support/register.js resolves that specifier here. The real runtime

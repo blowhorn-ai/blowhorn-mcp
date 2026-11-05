@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * `make hosted-schemas-refresh`: downloads every vendored schema, each source
  * at one pinned commit, byte for byte into hosted/schemas/vendor/<dir>/,

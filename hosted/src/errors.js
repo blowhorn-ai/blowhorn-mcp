@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 /*
  * The gateway's error codes. The definitions are data, hosted/errors/mcp.json,
  * in the shape of blowhorn-ai/blowhorn's error code registry; every one
