@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 /*
- * The caller's own Cloud API token, from `Authorization: Bearer <token>`.
- * The gateway keeps no credentials of its own: every call to Cloud carries
- * the caller's token, and nothing else.
+ * The Bearer token in an Authorization header, read for one purpose only: to
+ * key the per-caller rate limit by its hash (src/ratelimit.js). The gateway
+ * does not validate, interpret or store a token, and it forwards the header
+ * to Cloud unchanged whether or not this parses; what a token is, and whether
+ * it is valid for this resource, is Cloud's to decide.
  */
 
 export const MAX_TOKEN_LENGTH = 4096;

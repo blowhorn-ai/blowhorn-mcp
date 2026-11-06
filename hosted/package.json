@@ -1,8 +1,8 @@
 {
   "name": "blowhorn-mcp-hosted",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Interim read-only MCP gateway for Blowhorn Cloud, a Cloudflare Worker. Replaced once Cloud serves /mcp itself.",
+  "description": "Interim MCP transport proxy for Blowhorn Cloud's /mcp, a Cloudflare Worker. Replaced once Cloud serves mcp.blowhorn.ai itself.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "src/index.js",
@@ -10,17 +10,12 @@
     "node": ">=20"
   },
   "scripts": {
-    "generate": "node scripts/generate.js",
     "check-drift": "node scripts/check-drift.js",
-    "test": "node --import ./test/support/register.js --test test/*.test.js",
-    "schemas-refresh": "node scripts/schemas-refresh.js"
-  },
-  "dependencies": {
-    "@cfworker/json-schema": "4.1.4",
-    "@modelcontextprotocol/sdk": "1.32.2"
+    "test": "node --import ./test/support/register.js --test test/*.test.js"
   },
   "devDependencies": {
-    "js-yaml": "5.5.0",
+    "@cfworker/json-schema": "4.1.4",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "wrangler": "4.156.0"
   }
 }

@@ -1,31 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 /*
- * blowhorn-mcp-hosted: an INTERIM MCP gateway, served at
- * https://mcp.blowhorn.ai/mcp until Blowhorn Cloud serves /mcp itself
- * (blowhorn-ai/blowhorn#1509, U3). Retire this Worker then.
+ * blowhorn-mcp-hosted: an INTERIM transport proxy for the MCP resource
+ * https://mcp.blowhorn.ai/mcp until Blowhorn Cloud answers on that origin
+ * itself (blowhorn-ai/blowhorn#1509, U3). Retire this Worker then.
  *
- * Stateless Streamable HTTP: every POST /mcp builds a fresh MCP server whose
- * tools are the generated catalog (src/catalog.generated.json), every one a
- * read: a GET on the Cloud API. Each call forwards the caller's own Cloud API
- * token, sent as a Bearer header, and nothing is stored. Every request must
- * carry a Bearer token; Cloud validates it on each tool call. Each call is then
- * recorded as an event in the caller's Cloud activity (src/events.js), posted
- * alongside the response with ctx.waitUntil and never awaited. Every /mcp
- * request but a preflight passes a per-address rate limit first, and a
- * tools/call with a token counts toward a per-caller limit before Cloud is
- * called (src/ratelimit.js). The limiter is one Durable Object, exported
- * below; a missing binding fails closed. There is no SSE stream, no session
- * and no JSON-RPC batch.
+ * The Worker and Cloud's /mcp are ONE protected resource. This Worker is not
+ * an MCP server, not an OAuth authorization server, and not a token gateway:
+ * it carries each MCP request to https://cloud.blowhorn.ai/mcp and the answer
+ * back, byte for byte (src/proxy.js). Cloud owns the canonical resource, the
+ * 401 challenge and its resource_metadata, the protected resource metadata,
+ * token validation and the tools. A client that starts here follows Cloud's
+ * own challenge and metadata to Cloud's authorization server and registers
+ * and signs in there; nothing in this file knows what a valid token is.
+ *
+ * What the Worker itself keeps, because it is the only browser-facing edge
+ * and the only flood control in front of Cloud:
+ *  - the Origin allowlist on /mcp (public metadata is the one exception),
+ *  - the per-address rate limit on every request it would carry, and the
+ *    per-caller limit on a tools/call (src/ratelimit.js, one Durable Object,
+ *    exported below; a missing binding fails closed),
+ *  - a 1 MB request body bound and one JSON-RPC message per POST.
  */
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { readRequestBody, requestBodyTooLargeMessage } from "@modelcontextprotocol/sdk/server/requestBody.js";
-import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker-provider.js";
-import { Validator } from "@cfworker/json-schema";
 import { bearerToken } from "./auth.js";
-import { TOOLS, VERSION, callCloud, cloudBase } from "./cloud.js";
-import { operationId, postEvent, toolEvent } from "./events.js";
+import { BodyTimeoutError, MAX_REQUEST_BYTES, METADATA_REQUEST_HEADERS, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
 import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } from "./ratelimit.js";
 
 // Workers treat every named export of the main module as an entrypoint.
@@ -33,13 +30,9 @@ import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } fro
 // stays module-private, including NAME.
 const NAME = "blowhorn-mcp-hosted";
 export { RateLimiter };
-const MAX_REQUEST_BYTES = 1024 * 1024;
 
-const INSTRUCTIONS =
-  "Interim read-only gateway to the Blowhorn Cloud API. Every tool is a read: it lists or gets content items, events and connections of your organization and never changes anything. " +
-  "Each call is recorded as an event in your Cloud activity. Each call runs as the owner of the Cloud API token sent as the Bearer header. Pass organizationId to act in an organization other than your selected one.";
-
-const VALIDATORS = new Map([...TOOLS.values()].map((t) => [t.name, new Validator(t.inputSchema, "2020-12", false)]));
+const MCP_METHODS = "POST, GET, DELETE, OPTIONS";
+const METADATA_METHODS = "GET, HEAD, OPTIONS";
 
 function json(status, body, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
@@ -61,87 +54,37 @@ function corsHeaders(origin) {
   if (!origin) return {};
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Expose-Headers": "Mcp-Protocol-Version, WWW-Authenticate, Retry-After",
+    "Access-Control-Expose-Headers": "Mcp-Protocol-Version, Mcp-Session-Id, WWW-Authenticate, Retry-After",
     Vary: "Origin",
   };
 }
+
+/** Public metadata documents (RFC 9728) are readable by any origin; they carry no credential and set no cookie. */
+const METADATA_CORS = Object.freeze({ "Access-Control-Allow-Origin": "*" });
 
 function log(fields) {
   console.log(JSON.stringify(fields));
 }
 
-/** Validation messages for `args` against `tool`'s input schema; they name locations, never values. */
-function validationErrors(tool, args) {
-  const { valid, errors } = VALIDATORS.get(tool.name).validate(args);
-  if (valid) return [];
-  return errors.filter((e) => !["properties", "items", "false"].includes(e.keyword)).map((e) => `${e.instanceLocation.replace(/^#/, "") || "/"}: ${e.error}`);
+/** Whether a parsed JSON-RPC message is a tools/call. Keys are matched without case, as lenient decoders do, so no spelling slips past the caller limit. */
+function isToolsCall(message) {
+  if (!message || typeof message !== "object" || Array.isArray(message)) return false;
+  return Object.entries(message).some(([key, value]) => key.toLowerCase() === "method" && value === "tools/call");
 }
 
-/**
- * The MCP server for one HTTP request. `events` carries the request's ctx and
- * operationId; a call's event is posted with ctx.waitUntil, never awaited.
- */
-function buildServer(base, events) {
-  const server = new Server({ name: NAME, version: VERSION }, {
-    capabilities: { tools: {} },
-    instructions: INSTRUCTIONS,
-    // The SDK's default, Ajv, compiles with new Function, which Workers forbid.
-    jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
-  });
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [...TOOLS.values()].map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations })),
-  }));
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const name = request.params.name;
-    const tool = TOOLS.get(name);
-    const args = request.params.arguments ?? {};
-    const started = Date.now();
-    const token = extra.authInfo.token;
-    // Posts this call's event alongside the response, never awaited. Nothing is emitted without ctx.waitUntil.
-    const record = (outcome, { httpStatus, message, orgId } = {}) => {
-      if (typeof events.ctx?.waitUntil !== "function") return;
-      const payload = toolEvent({
-        tool: name,
-        outcome,
-        httpStatus,
-        durationMs: Date.now() - started,
-        requestId: crypto.randomUUID(),
-        operationId: events.operationId,
-        args,
-        rpcId: extra.requestId,
-        message,
-        token,
-      });
-      events.ctx.waitUntil(postEvent(payload, { base, token, orgId }));
-    };
-    if (!tool) {
-      record("unknown_tool", { message: "Unknown tool." });
-      throw new McpError(ErrorCode.InvalidParams, "Unknown tool.");
-    }
-    const errors = validationErrors(tool, args);
-    if (errors.length) {
-      const text = `Invalid arguments for ${tool.name}:\n${errors.join("\n")}`;
-      log({ method: "tools/call", tool: tool.name, status: "invalid", outcome: "invalid_arguments", ms: Date.now() - started });
-      record("invalid_arguments", { message: text });
-      return { isError: true, content: [{ type: "text", text }] };
-    }
-    const { result, status, outcome } = await callCloud(tool, args, { base, token });
-    log({ method: "tools/call", tool: tool.name, status, outcome, ms: Date.now() - started });
-    // A 401 means the token is not valid, so no user can be named and the write would be refused.
-    if (status === 401) {
-      log({ method: "tools/call", tool: tool.name, status, event: "skipped_unauthenticated" });
-      return result;
-    }
-    // The named organization gets the event only when Cloud served the call there, so a caller
-    // cannot write into an organization it cannot read; any other event goes to the caller's selected one.
-    const orgId = outcome === "ok" && typeof args.organizationId === "string" ? args.organizationId : undefined;
-    record(outcome, { httpStatus: status, message: result.isError ? result.content[0].text : undefined, orgId });
-    return result;
-  });
-  return server;
+/** Carries the request to Cloud and returns its answer, or the failure's response. */
+async function carry({ base, path, request, headers, body, cors, route }) {
+  const result = await forward({ base, path, method: request.method, headers, body });
+  if (result.failure) {
+    log({ event: "upstream_failed", outcome: result.failure, route: route.kind, error: result.error });
+    return failureResponse(result.failure, cors);
+  }
+  const out = returnHeaders(result.response.headers);
+  for (const [k, v] of Object.entries(cors)) out.set(k, v);
+  return new Response(request.method === "HEAD" ? null : result.response.body, { status: result.response.status, headers: out });
 }
 
-async function mcp(request, env, origin, events) {
+async function mcp(request, env, origin) {
   const cors = corsHeaders(origin);
   if (request.method === "OPTIONS") {
     if (!origin) return rpcError(403, -32000, "Forbidden: preflight needs an allowed Origin.");
@@ -149,13 +92,13 @@ async function mcp(request, env, origin, events) {
       status: 204,
       headers: {
         ...cors,
-        "Access-Control-Allow-Methods": "POST",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Mcp-Protocol-Version",
+        "Access-Control-Allow-Methods": "POST, GET, DELETE",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Mcp-Protocol-Version, Mcp-Session-Id, Last-Event-ID",
         "Access-Control-Max-Age": "600",
       },
     });
   }
-  // Before anything else, so a refused request gets no auth work or Cloud call. Its 429
+  // Before anything else, so a refused request gets no work and no Cloud call. Its 429
   // answers id null: the body is not read yet.
   const addressLimit = await refuses(env, "address", addressKey(request.headers.get("CF-Connecting-IP")));
   if (addressLimit.unavailable) return unavailable(cors);
@@ -163,81 +106,87 @@ async function mcp(request, env, origin, events) {
     log({ outcome: "rate_limited", limit: "address" });
     return refusal("address", cors, null, addressLimit.retryAfter);
   }
-  if (request.method !== "POST") return rpcError(405, -32000, "Method not allowed: this stateless gateway answers POST only.", { Allow: "POST", ...cors });
-
-  const header = request.headers.get("Authorization");
-  const token = bearerToken(header);
-  if (!token) {
-    // Nothing is recorded: a call without a valid token has no user to record it for.
-    log({ event: "auth_failed", reason: header === null ? "missing" : "malformed" });
-    // RFC 6750 3.1: no error code when the request carried no credentials at all.
-    const challenge = header === null ? 'Bearer realm="blowhorn-mcp"' : 'Bearer realm="blowhorn-mcp", error="invalid_token"';
-    return rpcError(
-      401,
-      -32001,
-      "Unauthorized: send your own Blowhorn Cloud API token as an Authorization: Bearer <token> header.",
-      { "WWW-Authenticate": challenge, ...cors },
-    );
+  if (!ROUTES["/mcp"].methods.includes(request.method)) {
+    return rpcError(405, -32000, "Method not allowed.", { Allow: MCP_METHODS, ...cors });
   }
-
-  // Parsed once here, not by the SDK, which gets the parsed body: so a JSON-RPC batch
-  // (an array) is refused before it counts toward the caller limit or can fan out
-  // into many Cloud calls at once.
-  let parsedBody;
-  try {
-    const body = await readRequestBody(request, MAX_REQUEST_BYTES);
-    if (body.tooLarge) return rpcError(413, -32000, requestBodyTooLargeMessage(MAX_REQUEST_BYTES), cors);
-    parsedBody = JSON.parse(body.text);
-  } catch {
-    return rpcError(400, -32700, "Parse error: Invalid JSON", cors);
-  }
-  if (Array.isArray(parsedBody)) return rpcError(400, -32600, "Invalid Request: JSON-RPC batches are not supported; send one message per POST.", cors);
-
-  // Only tools/call counts per caller, so a stateless client's initialize, notifications,
-  // tools/list and ping never spend its calls. Keyed by the token's hash, never the token;
-  // nothing is sent to Cloud or recorded for a refused request.
-  if (parsedBody?.method === "tools/call") {
-    const caller = await callerKey(token);
-    const callerLimit = await refuses(env, "caller", caller);
-    if (callerLimit.unavailable) return unavailable(cors);
-    if (callerLimit.refused) {
-      log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
-      return refusal("caller", cors, parsedBody.id, callerLimit.retryAfter);
-    }
-  }
-
   const base = cloudBase(env);
   if (!base) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", cors);
 
-  const server = buildServer(base, events);
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-    maxRequestBodySize: MAX_REQUEST_BYTES,
-  });
-  await server.connect(transport);
-  try {
-    const res = await transport.handleRequest(request, { parsedBody, authInfo: { token, clientId: "bearer", scopes: [] } });
-    const headers = new Headers(res.headers);
-    for (const [k, v] of Object.entries(cors)) headers.set(k, v);
-    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
-  } finally {
-    await server.close();
+  let body;
+  if (request.method === "POST") {
+    // Read once, bounded, and sent on as the same bytes. A request without a Bearer token is
+    // Cloud's to challenge, so its body is not looked at. With one, the body must be one
+    // JSON-RPC message: a batch could hide any number of tools/call from the caller limit.
+    try {
+      body = await readBounded(request, MAX_REQUEST_BYTES);
+    } catch (err) {
+      if (!(err instanceof BodyTimeoutError)) throw err;
+      log({ event: "request_failed", outcome: "request_timeout", route: "mcp" });
+      return failureResponse("request_timeout", cors);
+    }
+    if (body === null) return rpcError(413, -32000, `Request body too large: the limit is ${MAX_REQUEST_BYTES} bytes.`, cors);
+    const token = bearerToken(request.headers.get("Authorization"));
+    if (token) {
+      let message;
+      try {
+        message = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+      } catch {
+        return rpcError(400, -32700, "Parse error: Invalid JSON", cors);
+      }
+      if (Array.isArray(message)) return rpcError(400, -32600, "Invalid Request: JSON-RPC batches are not supported; send one message per POST.", cors);
+      // Only tools/call counts per caller, so a client's initialize, notifications,
+      // tools/list and ping never spend its calls. Keyed by the token's hash, never the token.
+      if (isToolsCall(message)) {
+        const caller = await callerKey(token);
+        const callerLimit = await refuses(env, "caller", caller);
+        if (callerLimit.unavailable) return unavailable(cors);
+        if (callerLimit.refused) {
+          log({ outcome: "rate_limited", limit: "caller", caller: caller.slice(0, 8) });
+          return refusal("caller", cors, message.id, callerLimit.retryAfter);
+        }
+      }
+    }
   }
+  return carry({ base, path: "/mcp", request, headers: forwardHeaders(request.headers, REQUEST_HEADERS), body, cors, route: ROUTES["/mcp"] });
+}
+
+/** A public metadata document: Cloud's, carried unchanged, readable by any origin. */
+async function metadata(request, env, path) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: { ...METADATA_CORS, "Access-Control-Allow-Methods": "GET, HEAD", "Access-Control-Allow-Headers": "Accept", "Access-Control-Max-Age": "600" },
+    });
+  }
+  // The same flood control as /mcp: an unauthenticated read that reaches Cloud counts for its address.
+  const addressLimit = await refuses(env, "address", addressKey(request.headers.get("CF-Connecting-IP")));
+  if (addressLimit.unavailable) return unavailable(METADATA_CORS);
+  if (addressLimit.refused) {
+    log({ outcome: "rate_limited", limit: "address" });
+    return refusal("address", METADATA_CORS, null, addressLimit.retryAfter);
+  }
+  if (!ROUTES[path].methods.includes(request.method)) {
+    return rpcError(405, -32000, "Method not allowed.", { Allow: METADATA_METHODS, ...METADATA_CORS });
+  }
+  const base = cloudBase(env);
+  if (!base) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", METADATA_CORS);
+  return carry({ base, path, request, headers: forwardHeaders(request.headers, METADATA_REQUEST_HEADERS), cors: METADATA_CORS, route: ROUTES[path] });
 }
 
 export default {
-  async fetch(request, env = {}, ctx) {
+  async fetch(request, env = {}) {
     const url = new URL(request.url);
     if (url.pathname === "/healthz") {
       if (request.method !== "GET" && request.method !== "HEAD") return json(405, { error: "method not allowed" }, { Allow: "GET, HEAD" });
       const ok = cloudBase(env) !== null;
-      return json(ok ? 200 : 500, { ok, name: NAME, version: VERSION, tools: TOOLS.size, interim: true });
+      return json(ok ? 200 : 500, { ok, name: NAME, version: VERSION, interim: true });
     }
-    if (url.pathname !== "/mcp") return json(404, { error: "not found" });
+    const route = Object.hasOwn(ROUTES, url.pathname) ? ROUTES[url.pathname] : null;
+    if (!route) return json(404, { error: "not found" });
+    if (route.kind === "metadata") return metadata(request, env, url.pathname);
 
     const origin = request.headers.get("Origin");
     if (origin !== null && !allowedOrigins(env).includes(origin)) return rpcError(403, -32000, "Forbidden: this Origin is not allowed.");
-    return mcp(request, env, origin, { ctx, operationId: operationId(request) });
+    return mcp(request, env, origin);
   },
 };

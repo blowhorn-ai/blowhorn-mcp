@@ -22,16 +22,24 @@ Notes for coding agents working in this repo.
   repo's blowhorn-axi launcher through a submodule. Add, never change.
 - **`schemas/vendor/`** stays byte for byte; refresh it only with
   `make schemas-refresh`.
-- **`hosted/`** is an interim read-only gateway, a Cloudflare Worker with
+- **`hosted/`** is an interim MCP transport proxy, a Cloudflare Worker with
   its own package, until Cloud serves `/mcp` itself
-  (blowhorn-ai/blowhorn#1509, U3); then it is retired. Its tool catalog,
-  `hosted/src/catalog.generated.json`, is written by `make hosted-generate`
-  from `hosted/schemas/vendor/`: never hand-edit it. The vendored schemas
-  stay byte for byte; refresh them only with `make hosted-schemas-refresh`.
-  Every tool must stay a GET: the generator refuses anything else. The only
-  other request is the activity event POST in `hosted/src/events.js`, sent
-  with `ctx.waitUntil` and validated against the vendored event schemas.
-  The gateway's error codes (`blowhorn-mcp-NNNN`, never reused) are data in
+  (blowhorn-ai/blowhorn#1509, U3); then it is retired. The Worker and Cloud's
+  `/mcp` are ONE protected resource, `https://mcp.blowhorn.ai/mcp`: the
+  Worker carries MCP requests to Cloud's `/mcp` and the answers back,
+  and Cloud owns the canonical resource, the 401 challenge, the protected
+  resource metadata, the authorization server, the tokens and the tools.
+  Never make the Worker an MCP server, an authorization server, a token
+  validator or a REST gateway, and never forward a token to a REST API. The
+  upstream URL is a constant, never built from the inbound request; only the
+  header allowlists in `hosted/src/proxy.js` cross the Worker (no cookie,
+  forwarded host or client identity); redirects are never followed; answers
+  stream. Keep the Origin policy on `/mcp` and both rate limits. The vendored
+  schema (`hosted/schemas/vendor/`) stays byte for byte; refresh it only with
+  `make hosted-schemas-refresh`. Deploy is automatic on merge to master, so
+  the "Before cutover" list in `hosted/README.md` must be verified against
+  Cloud first. The gateway's error codes (`blowhorn-mcp-NNNN`, never
+  reused; a retired code stays as a tombstone in `RETIRED`) are data in
   `hosted/errors/mcp.json`, each definition valid against the vendored
   ErrorDefinition construct: add a code there first, bump `nextErrorCode`,
   then map its outcome in `hosted/src/errors.js` and add its row to the
