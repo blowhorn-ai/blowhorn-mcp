@@ -49,7 +49,7 @@ export const REQUEST_HEADERS = Object.freeze(["Authorization", "Content-Type", "
 /** Request headers carried to Cloud on a metadata route: public documents, so no credential. */
 export const METADATA_REQUEST_HEADERS = Object.freeze(["Accept", "traceparent", "tracestate"]);
 /** Answer headers carried back to the client. Content-Length is not: the runtime frames the streamed body. */
-export const RESPONSE_HEADERS = Object.freeze(["Content-Type", "WWW-Authenticate", "Mcp-Session-Id", "Allow", "Retry-After", "Cache-Control", "Link"]);
+export const RESPONSE_HEADERS = Object.freeze(["Content-Type", "WWW-Authenticate", "Mcp-Session-Id", "Mcp-Protocol-Version", "Allow", "Retry-After", "Cache-Control", "Link"]);
 
 /**
  * The Cloud base URL from `env.CLOUD_API_BASE`, without a trailing slash, or
@@ -82,26 +82,44 @@ export function returnHeaders(upstream) {
   return out;
 }
 
+/** The client did not finish sending its body within the read budget. */
+export class BodyTimeoutError extends Error {}
+
 /**
  * The request body as the exact bytes received, or null when it is over
- * `max`. Reads at most max + 1 bytes: a body over the cap is never held.
+ * `max`. Reads at most max + 1 bytes: a body over the cap is never held. The
+ * whole read has `timeoutMs` (the same 20 s budget as the trip to Cloud), so
+ * a client that trickles bytes cannot hold the request open; past it the
+ * body is cancelled and a BodyTimeoutError is thrown.
  */
-export async function readBounded(request, max = MAX_REQUEST_BYTES) {
+export async function readBounded(request, max = MAX_REQUEST_BYTES, timeoutMs = TIMEOUT_MS) {
   const declared = Number(request.headers.get("Content-Length"));
   if (Number.isFinite(declared) && declared > max) return null;
   if (!request.body) return new ArrayBuffer(0);
   const reader = request.body.getReader();
   const chunks = [];
   let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      return null;
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new BodyTimeoutError("request body read timed out")), timeoutMs);
+  });
+  try {
+    for (;;) {
+      const { done, value } = await Promise.race([reader.read(), expired]);
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } catch (err) {
+    if (err instanceof BodyTimeoutError) await reader.cancel().catch(() => {});
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    expired.catch(() => {});
   }
   const out = new Uint8Array(size);
   let at = 0;
@@ -141,10 +159,11 @@ export async function forward({ base, path, method, headers, body, fetchImpl = g
   return { response: upstream };
 }
 
-const FAILURE_STATUS = Object.freeze({ upstream_unreachable: 502, upstream_timeout: 504, upstream_redirect: 502 });
+const FAILURE_STATUS = Object.freeze({ upstream_unreachable: 502, upstream_timeout: 504, upstream_redirect: 502, request_timeout: 408 });
 
 /**
- * The answer for a failed trip to Cloud: 502 or 504, a JSON-RPC internal
+ * The answer for a failed trip to Cloud (502 or 504), or for a client body that
+ * did not arrive in time (408), a JSON-RPC internal
  * error whose message is the code's short description and whose data is its
  * ErrorDefinition (src/errors.js), with the given CORS headers.
  */

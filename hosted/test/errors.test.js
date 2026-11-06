@@ -42,8 +42,8 @@ test("the retired codes 1000-1009 stay as tombstones that say so, and nextErrorC
     assert.ok(d.moniker && d.probableCauses.length, code);
   }
   for (const d of registry.definitions.filter((x) => !RETIRED.includes(x.code))) assert.doesNotMatch(d.longDescription, /^Retired/, d.code);
-  assert.strictEqual(registry.nextErrorCode, 1014);
-  assert.strictEqual(Math.max(...registry.definitions.map((d) => Number(d.code.slice(-4)))), 1013);
+  assert.strictEqual(registry.nextErrorCode, 1015);
+  assert.strictEqual(Math.max(...registry.definitions.map((d) => Number(d.code.slice(-4)))), 1014);
 });
 
 test("the codes, causes and remediation ids that predate the registry file are kept", () => {
@@ -63,6 +63,7 @@ test("the codes, causes and remediation ids that predate the registry file are k
     "blowhorn-mcp-1011": [["cloud-unavailable", ["try-again", "contact-support"]]],
     "blowhorn-mcp-1012": [["cloud-slow", ["try-again"]]],
     "blowhorn-mcp-1013": [["endpoint-moved", ["try-again", "contact-support"]]],
+    "blowhorn-mcp-1014": [["slow-client", ["send-again"]]],
   });
 });
 
@@ -78,14 +79,15 @@ test("blowhorn-mcp-1010 is ErrRateLimited, a warning, and none of its remediatio
 
 test("the upstream codes are errors named for what happened, and none of their remediations is an action", () => {
   assert.deepStrictEqual(
-    ["upstream_unreachable", "upstream_timeout", "upstream_redirect"].map((o) => [definition(o).code, definition(o).moniker, definition(o).severity]),
+    ["upstream_unreachable", "upstream_timeout", "upstream_redirect", "request_timeout"].map((o) => [definition(o).code, definition(o).moniker, definition(o).severity]),
     [
       ["blowhorn-mcp-1011", "ErrUpstreamUnreachable", "error"],
       ["blowhorn-mcp-1012", "ErrUpstreamTimeout", "error"],
       ["blowhorn-mcp-1013", "ErrUpstreamRedirect", "error"],
+      ["blowhorn-mcp-1014", "ErrRequestBodyTimeout", "warning"],
     ],
   );
-  for (const o of ["upstream_unreachable", "upstream_timeout", "upstream_redirect"]) {
+  for (const o of ["upstream_unreachable", "upstream_timeout", "upstream_redirect", "request_timeout"]) {
     for (const r of definition(o).probableCauses.flatMap((c) => c.remediations)) assert.strictEqual(r.action, undefined, r.id);
   }
 });
@@ -94,13 +96,13 @@ test("registryProblems names what the construct and the gateway's own rules refu
   const cases = [
     [(r) => (r.definitions[0].reason = "a gateway-only clause."), /definitions\[0\] blowhorn-mcp-1000 \/: Property "reason" does not match additional properties schema/],
     [(r) => (r.definitions[1].code = "blowhorn-mcp-1000"), /definitions\[1\] blowhorn-mcp-1000: code is used twice/],
-    [(r) => (r.nextErrorCode = 1013), /blowhorn-mcp-1013: number is not below nextErrorCode 1013/],
+    [(r) => (r.nextErrorCode = 1014), /blowhorn-mcp-1014: number is not below nextErrorCode 1014/],
     [(r) => (r.definitions[6].component = { type: "blowhorn", name: "engine" }), /blowhorn-mcp-1006: component is not blowhorn\/mcp/],
     [(r) => (r.component = { type: "blowhorn", name: "engine" }), /component is not \{"type": "blowhorn", "name": "mcp"\}/],
     [(r) => r.definitions.splice(10, 1), /outcome rate_limited: no definition for blowhorn-mcp-1010/],
     [(r) => r.definitions.splice(0, 1), /retired blowhorn-mcp-1000: no definition, so its number could be reused/],
     [(r) => (r.extra = true), /keys are \$comment, component, definitions, extra, nextErrorCode/],
-    [(r) => (r.nextErrorCode = 1015), /nextErrorCode is 1015; want 1014, one past the highest code/],
+    [(r) => (r.nextErrorCode = 1016), /nextErrorCode is 1016; want 1015, one past the highest code/],
     [(r) => (r.definitions[3].probableCauses = []), /definitions\[3\] blowhorn-mcp-1003: no probable cause/],
     [(r) => (r.definitions[5].probableCauses[1].remediations = []), /definitions\[5\] blowhorn-mcp-1005: cause call-too-big has no remediation/],
     [(r) => (r.definitions[2].moniker = "ErrUnknownTool"), /definitions\[2\] blowhorn-mcp-1002: moniker ErrUnknownTool is used twice/],

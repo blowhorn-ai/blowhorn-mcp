@@ -15,6 +15,7 @@ export const CODES = Object.freeze({
   upstream_unreachable: "blowhorn-mcp-1011",
   upstream_timeout: "blowhorn-mcp-1012",
   upstream_redirect: "blowhorn-mcp-1013",
+  request_timeout: "blowhorn-mcp-1014",
 });
 
 /**

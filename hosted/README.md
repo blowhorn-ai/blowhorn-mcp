@@ -54,7 +54,7 @@ What crosses the Worker, both ways, is filtered by an allowlist:
   metadata routes carry only `Accept`, `traceparent`, `tracestate` and the
   `User-Agent`: no credential goes to a public document.
 - **Answer to the client:** `Content-Type`, `WWW-Authenticate`,
-  `Mcp-Session-Id`, `Allow`, `Retry-After`, `Cache-Control` and `Link`.
+  `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Allow`, `Retry-After`, `Cache-Control` and `Link`.
   Never `Set-Cookie`, `Location` or any `Access-Control-*` from Cloud; the
   Worker sets its own CORS.
 - **The upstream URL** is the constant `https://cloud.blowhorn.ai` plus the
@@ -66,8 +66,12 @@ What crosses the Worker, both ways, is filtered by an allowlist:
 - **Bodies.** An answer is streamed to the client as it arrives, never
   buffered, and the 20 s timeout covers only the status and headers, so a
   long-lived event stream is not cut. A request body is read once, bounded at
-  1 MB (else `413`, and the read stops at the cap), and sent on as the exact
-  bytes received. It is read, rather than piped, because the per-caller rate
+  1 MB (else `413`, and the read stops at the cap) and in time (the whole read
+  has the same 20 s; else `408`, `blowhorn-mcp-1014`, nothing sent to Cloud),
+  and sent on as the exact bytes received. Bodies are uncompressed JSON only:
+  `Content-Encoding` is not forwarded and the Worker does not decode, so a
+  compressed body that carries a Bearer token is a `400` parse error, and one
+  without is Cloud's to reject. It is read, rather than piped, because the per-caller rate
   limit must see the JSON-RPC method before anything goes to Cloud.
 - **One JSON-RPC message per POST, when a Bearer token is present.** The
   caller limit counts `tools/call`, and a batch (a JSON array) could hide any
@@ -350,6 +354,7 @@ person or their client can do any of them.
 | `blowhorn-mcp-1011` | `ErrUpstreamUnreachable` | `upstream_unreachable`, a 502 |
 | `blowhorn-mcp-1012` | `ErrUpstreamTimeout` | `upstream_timeout`, a 504 |
 | `blowhorn-mcp-1013` | `ErrUpstreamRedirect` | `upstream_redirect`, a 502 |
+| `blowhorn-mcp-1014` | `ErrRequestBodyTimeout` | `request_timeout`, a 408 |
 
 `retired` codes (1000 to 1009) are tombstones. The 0.1.x gateway ran four
 tools itself and reported these; Cloud does that now, so nothing reports

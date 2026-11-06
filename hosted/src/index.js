@@ -22,7 +22,7 @@
  *  - a 1 MB request body bound and one JSON-RPC message per POST.
  */
 import { bearerToken } from "./auth.js";
-import { MAX_REQUEST_BYTES, METADATA_REQUEST_HEADERS, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
+import { BodyTimeoutError, MAX_REQUEST_BYTES, METADATA_REQUEST_HEADERS, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
 import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } from "./ratelimit.js";
 
 // Workers treat every named export of the main module as an entrypoint.
@@ -117,7 +117,13 @@ async function mcp(request, env, origin) {
     // Read once, bounded, and sent on as the same bytes. A request without a Bearer token is
     // Cloud's to challenge, so its body is not looked at. With one, the body must be one
     // JSON-RPC message: a batch could hide any number of tools/call from the caller limit.
-    body = await readBounded(request, MAX_REQUEST_BYTES);
+    try {
+      body = await readBounded(request, MAX_REQUEST_BYTES);
+    } catch (err) {
+      if (!(err instanceof BodyTimeoutError)) throw err;
+      log({ event: "request_failed", outcome: "request_timeout", route: "mcp" });
+      return failureResponse("request_timeout", cors);
+    }
     if (body === null) return rpcError(413, -32000, `Request body too large: the limit is ${MAX_REQUEST_BYTES} bytes.`, cors);
     const token = bearerToken(request.headers.get("Authorization"));
     if (token) {
