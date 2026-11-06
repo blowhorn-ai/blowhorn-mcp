@@ -7,14 +7,14 @@
   },
   "metadata": {
     "description": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
-    "version": "0.1.4"
+    "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "blowhorn",
       "source": "./",
       "description": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
-      "version": "0.1.4",
+      "version": "1.0.0",
       "author": {
         "name": "Blowhorn",
         "url": "https://blowhorn.ai/"

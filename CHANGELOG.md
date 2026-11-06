@@ -5,6 +5,13 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+## 1.0.0
+
+- First stable release. The version jumps from 0.1.4 to 1.0.0; there are no
+  launcher feature changes in this cut.
+- Relicensed first-party code under Apache License 2.0 (#29). npm `blowhorn-mcp`
+  and the MCP Registry entry `io.github.blowhorn-ai/blowhorn` now publish as
+  Apache-2.0 (0.1.4 on npm still carried `AGPL-3.0-only`).
 - `hosted/`: `/mcp` rate limits are a strict fixed-window Durable Object
   (`RateLimiter`, bound as `RATE_LIMITER`) instead of Cloudflare's simple
   `ratelimits` bindings, which do not enforce on a live worker
