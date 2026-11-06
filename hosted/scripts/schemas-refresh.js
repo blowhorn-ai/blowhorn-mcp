@@ -6,7 +6,8 @@
  * following every relative $ref transitively, and rewrites
  * hosted/schemas/vendor/SOURCES.json with each file's sha256. The only
  * hosted/ script that touches the network; run it by hand, review the diff,
- * then run `make hosted-generate` and `make check`.
+ * then run `make check`. Every vendored file is JSON, so $refs are followed with
+ * JSON.parse.
  *
  * blowhorn-ai/blowhorn is private, so its files need a GitHub token in
  * GITHUB_TOKEN or GH_TOKEN (for example `GITHUB_TOKEN=$(gh auth token)`).
@@ -16,7 +17,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { load } from "js-yaml";
 
 const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const VENDOR = path.join(HOSTED, "schemas", "vendor");
@@ -33,18 +33,6 @@ export const SOURCES = [
     sourcePr: "blowhorn-ai/blowhorn#1672",
     dir: "blowhorn",
     roots: ["schemas/dist/ErrorDefinition.schema.json"],
-  },
-  {
-    repo: "meshery/schemas",
-    ref: "7582dec49ba1227f34371341103e8374228d4b0d",
-    sourcePr: "meshery/schemas#1326",
-    dir: "meshery-schemas",
-    roots: [
-      "schemas/constructs/v1beta3/content_item/api.yml",
-      "schemas/constructs/v1beta3/event/api.yml",
-      "schemas/constructs/v1beta3/connection/api.yml",
-      "schemas/extensions/mcp-operation.yaml",
-    ],
   },
 ];
 
@@ -86,7 +74,7 @@ async function refresh({ repo, ref, sourcePr, dir, roots }) {
     seen.add(file);
     if (file.startsWith("..")) throw new Error(`${repo} ${file}: $ref leaves the repo`);
     const bytes = await download(repo, ref, file);
-    const doc = load(bytes.toString("utf8"));
+    const doc = JSON.parse(bytes.toString("utf8"));
     const dest = path.join(VENDOR, dir, file);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, bytes);

@@ -13,6 +13,7 @@ import { Validator } from "@cfworker/json-schema";
 import { DurableObject } from "cloudflare:workers";
 import { LIMITS, RATE_LIMITED, RATE_LIMITER_BINDING, RateLimiter, addressKey, callerKey, rateLimits } from "../src/ratelimit.js";
 import { errorDefinitionSchema, errorDefinitionValidator } from "../scripts/registry.js";
+import { fakeCloud } from "./support/harness.js";
 
 const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TOKEN = "ratelimit-test-token-0123456789";
@@ -22,7 +23,7 @@ const ORIGIN = "https://app.example.test";
 const BASE_ENV = { CLOUD_API_BASE: "https://cloud.blowhorn.ai", ALLOWED_ORIGINS: ORIGIN };
 const CONFIG = { address: { limit: 1200, period: 60 }, caller: { limit: 60, period: 60 } };
 const MCP = "https://mcp.blowhorn.ai/mcp";
-const EVENTS = "https://cloud.blowhorn.ai/api/events";
+const PRM = "https://mcp.blowhorn.ai/.well-known/oauth-protected-resource/mcp";
 const INIT = { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } };
 const auth = { Authorization: `Bearer ${TOKEN}`, "CF-Connecting-IP": IP };
 
@@ -123,9 +124,10 @@ function mockCloud(t, respond = () => assert.fail("Cloud was called")) {
   return calls;
 }
 
-/** Cloud answering every tool call with an empty list and every event post with 201. */
+/** Cloud answering MCP requests (a fake upstream, test/support/harness.js) for a request carrying this file's token. */
 function mockCloudOk(t) {
-  return mockCloud(t, (url) => (url === EVENTS ? new Response(null, { status: 201 }) : new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } })));
+  const cloud = fakeCloud({ legacyTokens: [TOKEN] });
+  return mockCloud(t, (url, init) => cloud.handle(url, init));
 }
 
 /** Captures console.log for the test's duration; the returned array holds the parsed lines. */
@@ -137,11 +139,6 @@ function captureLogs(t) {
     console.log = original;
   });
   return lines;
-}
-
-function collector() {
-  const promises = [];
-  return { promises, waitUntil: (p) => promises.push(p), settle: () => Promise.all(promises) };
 }
 
 /**
@@ -237,13 +234,12 @@ test("under both limits a session runs as usual, keyed by the address and the to
   const env = envWith();
   const logs = captureLogs(t);
   const calls = mockCloudOk(t);
-  const ctx = collector();
   const methods = [];
   const transport = new StreamableHTTPClientTransport(new URL(MCP), {
     requestInit: { headers: auth },
     fetch: (url, init) => {
       methods.push(init?.method ?? "GET");
-      return worker.fetch(new Request(url, init), env, ctx);
+      return worker.fetch(new Request(url, init), env, {});
     },
   });
   const c = new Client({ name: "test", version: "1" });
@@ -251,8 +247,7 @@ test("under both limits a session runs as usual, keyed by the address and the to
   t.after(() => c.close());
   await c.listTools();
   assert.ok(!(await c.callTool({ name: "getEvents", arguments: {} })).isError);
-  await ctx.settle();
-  assert.strictEqual(calls.filter((x) => x.url === EVENTS).length, 1);
+  assert.ok(calls.length >= 4, "every request that passed both limits went to Cloud");
   // Every /mcp request counts for its address; only the one tools/call for the caller.
   assert.strictEqual(env.keys.address.length, methods.length);
   assert.deepStrictEqual(new Set(env.keys.address), new Set([IP]));
@@ -270,11 +265,10 @@ test("callerKey is the hex SHA-256 of the token", async () => {
   assert.notStrictEqual(await callerKey(`${TOKEN}x`), HASH);
 });
 
-test("over the address limit is 429 before authentication: no caller check, no Cloud call, no event", async (t) => {
+test("over the address limit is 429 before authentication: no caller check, no Cloud call", async (t) => {
   const calls = mockCloud(t);
   const logs = captureLogs(t);
   const env = envWith({ address: false });
-  const ctx = collector();
   const cases = [
     rpc(...CALL),
     rpc("initialize", INIT, { "CF-Connecting-IP": IP }),
@@ -282,25 +276,21 @@ test("over the address limit is 429 before authentication: no caller check, no C
     new Request(MCP, { method: "GET", headers: { "CF-Connecting-IP": IP } }),
   ];
   for (const request of cases) {
-    const res = await worker.fetch(request, env, ctx);
+    const res = await worker.fetch(request, env, {});
     assert.strictEqual(res.headers.get("WWW-Authenticate"), null);
     await assertRefused(res, "address");
   }
   assert.strictEqual(env.keys.caller.length, 0);
   assert.strictEqual(calls.length, 0);
-  assert.strictEqual(ctx.promises.length, 0);
   assert.deepStrictEqual(logs, cases.map(() => ({ outcome: "rate_limited", limit: "address" })));
 });
 
-test("over the caller limit a tools/call is 429 with the caller's cause: no Cloud call, no event, one log line without the token or its hash", async (t) => {
+test("over the caller limit a tools/call is 429 with the caller's cause: no Cloud call, one log line without the token or its hash", async (t) => {
   const calls = mockCloud(t);
   const logs = captureLogs(t);
-  const ctx = collector();
   const env = envWith({ caller: false });
-  await assertRefused(await worker.fetch(rpc(...CALL), env, ctx), "caller");
-  await ctx.settle();
+  await assertRefused(await worker.fetch(rpc(...CALL), env, {}), "caller");
   assert.strictEqual(calls.length, 0);
-  assert.strictEqual(ctx.promises.length, 0);
   assert.deepStrictEqual(logs, [{ outcome: "rate_limited", limit: "caller", caller: HASH.slice(0, 8) }]);
   const text = JSON.stringify(logs);
   assert.ok(!text.includes(TOKEN) && !text.includes(HASH));
@@ -326,7 +316,7 @@ test("an address 429 answers id null, since the body is not read yet", async (t)
 });
 
 test("initialize, notifications, tools/list and ping never count toward the caller limit, even over it", async (t) => {
-  mockCloud(t);
+  mockCloudOk(t);
   const logs = captureLogs(t);
   const env = envWith({ caller: false });
   const notification = post(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
@@ -341,7 +331,7 @@ test("a tools/call counts once, and a batch of tools/call messages is refused as
   const calls = mockCloudOk(t);
   captureLogs(t);
   const env = envWith({ caller: (n) => n <= 60 });
-  assert.strictEqual((await worker.fetch(rpc(...CALL), env, collector())).status, 200);
+  assert.strictEqual((await worker.fetch(rpc(...CALL), env, {})).status, 200);
   assert.strictEqual(env.keys.caller.length, 1);
   const cloudCalls = calls.length;
   const [method, params] = CALL;
@@ -353,7 +343,7 @@ test("a tools/call counts once, and a batch of tools/call messages is refused as
   assert.match(error.message, /batch/i);
   assert.strictEqual(env.keys.caller.length, 1, "the batch spent none of the caller's calls");
   assert.strictEqual(calls.length, cloudCalls, "nor reached Cloud");
-  assert.strictEqual((await worker.fetch(rpc(...CALL), env, collector())).status, 200);
+  assert.strictEqual((await worker.fetch(rpc(...CALL), env, {})).status, 200);
   assert.strictEqual(env.keys.caller.length, 2);
 });
 
@@ -372,7 +362,7 @@ test("a burst of tool calls passes up to the limit, then is refused", async (t) 
   captureLogs(t);
   const env = envWith({ caller: (n) => n <= 3 });
   const statuses = [];
-  for (let i = 0; i < 5; i++) statuses.push((await worker.fetch(rpc(...CALL), env, collector())).status);
+  for (let i = 0; i < 5; i++) statuses.push((await worker.fetch(rpc(...CALL), env, {})).status);
   assert.deepStrictEqual(statuses, [200, 200, 200, 429, 429]);
 });
 
@@ -400,9 +390,8 @@ test("without RATE_LIMITER the request is refused, and the isolate logs ratelimi
   const calls = mockCloud(t);
   const logs = captureLogs(t);
   const env = { ...BASE_ENV, RATE_LIMITS: JSON.stringify(CONFIG) };
-  const ctx = collector();
   for (let i = 0; i < 3; i++) {
-    const res = await worker.fetch(rpc(...CALL), env, ctx);
+    const res = await worker.fetch(rpc(...CALL), env, {});
     assert.strictEqual(res.status, 503);
     assert.deepStrictEqual(await res.json(), {
       jsonrpc: "2.0",
@@ -411,7 +400,6 @@ test("without RATE_LIMITER the request is refused, and the isolate logs ratelimi
     });
   }
   assert.strictEqual(calls.length, 0);
-  assert.strictEqual(ctx.promises.length, 0);
   assert.deepStrictEqual(logs.filter((l) => l.event === "ratelimit_unbound"), [{ event: "ratelimit_unbound", binding: RATE_LIMITER_BINDING }]);
   assert.ok(!JSON.stringify(logs).includes(TOKEN));
 });
@@ -420,7 +408,7 @@ test("a RATE_LIMITS value that is not the schema's shape fails closed and logs r
   const calls = mockCloud(t);
   const logs = captureLogs(t);
   const env = envWith({ limits: "not-json" });
-  for (let i = 0; i < 3; i++) assert.strictEqual((await worker.fetch(rpc(...CALL), env, collector())).status, 503);
+  for (let i = 0; i < 3; i++) assert.strictEqual((await worker.fetch(rpc(...CALL), env, {})).status, 503);
   assert.strictEqual(calls.length, 0);
   assert.deepStrictEqual(logs.filter((l) => l.event === "ratelimit_misconfigured"), [{ event: "ratelimit_misconfigured" }]);
   assert.strictEqual(env.keys.address.length, 0);
@@ -429,12 +417,12 @@ test("a RATE_LIMITS value that is not the schema's shape fails closed and logs r
 test("a limiter that throws refuses the request and logs ratelimit_failed with the error name only", async (t) => {
   const calls = mockCloud(t);
   const logs = captureLogs(t);
-  const res = await worker.fetch(rpc(...CALL), envWith({ throwOn: "address" }), collector());
+  const res = await worker.fetch(rpc(...CALL), envWith({ throwOn: "address" }), {});
   assert.strictEqual(res.status, 503);
   assert.deepStrictEqual(logs.filter((l) => l.event?.startsWith("ratelimit_")), [{ event: "ratelimit_failed", limit: "address", error: "TypeError" }]);
   assert.strictEqual(calls.length, 0);
   assert.ok(!JSON.stringify(logs).includes(TOKEN));
-  const callerDown = await worker.fetch(rpc(...CALL), envWith({ throwOn: "caller" }), collector());
+  const callerDown = await worker.fetch(rpc(...CALL), envWith({ throwOn: "caller" }), {});
   assert.strictEqual(callerDown.status, 503);
   assert.ok(logs.some((l) => l.event === "ratelimit_failed" && l.limit === "caller" && l.error === "TypeError"));
 });
@@ -470,6 +458,57 @@ test("the 429 example in README.md is exactly what the caller limit sends", asyn
   const example = JSON.parse(section.match(/```json\n([\s\S]*?)\n```/)[1]);
   const res = await worker.fetch(rpc(...CALL), envWith({ caller: false }), {});
   assert.deepStrictEqual(await res.json(), example);
+});
+
+test("a tools/call counts however its method key is spelled, so no decoder's leniency slips past the caller limit", async (t) => {
+  mockCloudOk(t);
+  captureLogs(t);
+  const env = envWith({ caller: false });
+  for (const key of ["method", "METHOD", "Method"]) {
+    const res = await worker.fetch(post(JSON.stringify({ jsonrpc: "2.0", id: 1, [key]: "tools/call", params: { name: "getEvents", arguments: {} } })), env, {});
+    await assertRefused(res, "caller");
+  }
+  assert.strictEqual(env.keys.caller.length, 3);
+});
+
+test("a request without a Bearer token spends no caller limit, and Cloud answers its challenge", async (t) => {
+  const calls = mockCloudOk(t);
+  captureLogs(t);
+  const env = envWith({ caller: false });
+  for (const headers of [{ "CF-Connecting-IP": IP }, { "CF-Connecting-IP": IP, Authorization: "Basic abc" }]) {
+    const res = await worker.fetch(rpc(...CALL, headers), env, {});
+    assert.strictEqual(res.status, 401);
+    assert.match(res.headers.get("WWW-Authenticate"), /resource_metadata=/);
+  }
+  assert.strictEqual(env.keys.caller.length, 0);
+  assert.strictEqual(calls.length, 2);
+});
+
+test("the protected resource metadata is behind the address limit too: over it is a 429 before any Cloud call, with public CORS and no caller check", async (t) => {
+  const calls = mockCloud(t);
+  const logs = captureLogs(t);
+  const env = envWith({ address: false, caller: false });
+  for (const path of [new URL(PRM).pathname, "/.well-known/oauth-protected-resource"]) {
+    const res = await worker.fetch(new Request(`https://mcp.blowhorn.ai${path}`, { headers: { "CF-Connecting-IP": IP, Origin: "https://anywhere.example.test" } }), env, {});
+    await assertRefused(res, "address");
+    assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), "*");
+  }
+  assert.strictEqual(calls.length, 0);
+  assert.strictEqual(env.keys.caller.length, 0);
+  assert.deepStrictEqual(logs, [{ outcome: "rate_limited", limit: "address" }, { outcome: "rate_limited", limit: "address" }]);
+  const ok = envWith();
+  mockCloudOk(t);
+  assert.strictEqual((await worker.fetch(new Request(PRM, { headers: { "CF-Connecting-IP": IP } }), ok, {})).status, 200);
+  assert.deepStrictEqual(ok.keys.address, [IP]);
+  assert.strictEqual(ok.keys.caller.length, 0);
+});
+
+test("a metadata request with the limiter down is a 503, not an unlimited read", async (t) => {
+  const calls = mockCloud(t);
+  captureLogs(t);
+  const res = await worker.fetch(new Request(PRM), envWith({ throwOn: "address" }), {});
+  assert.strictEqual(res.status, 503);
+  assert.strictEqual(calls.length, 0);
 });
 
 test("RateLimiter extends DurableObject so Workers expose limit as an RPC method", () => {
@@ -518,13 +557,11 @@ test("over a real fixed window the 429's Retry-After is the time left, and the t
   mockCloudOk(t);
   captureLogs(t);
   const env = durableEnv({ address: { limit: 1200, period: 60 }, caller: { limit: 2, period: 60 } });
-  const ctx = collector();
-  assert.strictEqual((await worker.fetch(rpc(...CALL), env, ctx)).status, 200);
-  assert.strictEqual((await worker.fetch(rpc(...CALL), env, ctx)).status, 200);
-  const res = await worker.fetch(rpc(...CALL), env, ctx);
+  assert.strictEqual((await worker.fetch(rpc(...CALL), env, {})).status, 200);
+  assert.strictEqual((await worker.fetch(rpc(...CALL), env, {})).status, 200);
+  const res = await worker.fetch(rpc(...CALL), env, {});
   const retryAfter = Math.max(1, Math.ceil(((Math.floor(now / periodMs) + 1) * periodMs - now) / 1000));
   await assertRefused(res, "caller", 1, retryAfter);
   assert.deepStrictEqual(env.keys.caller, [HASH, HASH, HASH]);
   assert.ok(env.keys.caller.every((k) => k === HASH && !k.includes(TOKEN)));
-  await ctx.settle();
 });

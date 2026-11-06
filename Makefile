@@ -11,13 +11,13 @@ TAG     := v$(VERSION)
 REQUIRE_PLAIN_VERSION = @printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "$@: version $(VERSION) in package.json is not plain X.Y.Z"; exit 1; }
 
 .PHONY: install generate check check-drift validate check-copy check-skill check-facts check-logo test check-pack schemas-refresh release publish \
-	hosted-install hosted-generate hosted-check hosted-schemas-refresh hosted-require-node hosted-deploy
+	hosted-install hosted-check hosted-schemas-refresh hosted-require-node hosted-deploy
 
 ## install: dev tooling (Ajv) into tools/node_modules. The root package has
 ## "os": ["darwin"], which makes npm refuse any install at the root on other
 ## platforms, so the tooling lives in its own private package in tools/.
 ## Ajv and ajv-formats need no lifecycle scripts, so none run.
-## hosted/ is its own package too (the interim gateway), so install covers it.
+## hosted/ is its own package too (the interim transport proxy), so install covers it.
 install: hosted-install
 	npm ci --prefix tools --ignore-scripts --no-audit --no-fund
 
@@ -79,20 +79,15 @@ hosted-install:
 hosted/node_modules/@modelcontextprotocol/sdk/package.json:
 	$(MAKE) hosted-install
 
-## hosted-generate: write hosted/src/catalog.generated.json from the vendored schemas.
-hosted-generate: hosted/node_modules/@modelcontextprotocol/sdk/package.json
-	node hosted/scripts/generate.js
-
-## hosted-check: catalog and vendor drift, then the gateway's tests.
+## hosted-check: vendored schema and error registry drift, then the proxy's tests.
 hosted-check: hosted/node_modules/@modelcontextprotocol/sdk/package.json
 	node hosted/scripts/check-drift.js
 	cd hosted && node --import ./test/support/register.js --test test/*.test.js
 
-## hosted-schemas-refresh: re-download hosted/schemas/vendor/ at the pinned commits (network).
+## hosted-schemas-refresh: re-download hosted/schemas/vendor/ at the pinned commit (network).
 ## blowhorn-ai/blowhorn is private: run it with GITHUB_TOKEN=$(gh auth token).
 hosted-schemas-refresh: hosted/node_modules/@modelcontextprotocol/sdk/package.json
 	node hosted/scripts/schemas-refresh.js
-	$(MAKE) hosted-generate
 
 ## hosted-require-node: refuse unless Node is at least the major in
 ## hosted/.nvmrc, which is what the locked wrangler needs. Every target that
@@ -100,7 +95,7 @@ hosted-schemas-refresh: hosted/node_modules/@modelcontextprotocol/sdk/package.js
 hosted-require-node:
 	@node hosted/scripts/require-node.js
 
-## hosted-deploy: deploy the interim gateway Worker with the locked wrangler in
+## hosted-deploy: deploy the interim transport proxy Worker with the locked wrangler in
 ## hosted/node_modules, never a download. It always reinstalls from
 ## hosted/package-lock.json first, so a node_modules left from before a lock
 ## bump never deploys another wrangler. Run from the VM only; needs
