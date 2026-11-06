@@ -224,7 +224,10 @@ after the address limit, and refuses a batch (a JSON array) with a `400`
 before the caller limit, so a batch counts nothing; a single `tools/call`
 message counts one, however its `method` key is cased. A body that does not
 parse counts nothing and gets the `-32700` parse error. A request without a
-Bearer token spends no caller limit at all: Cloud challenges it.
+Bearer token spends no caller limit at all: Cloud challenges it. So does a
+`Bearer` value that is not a well-formed token (over 4096 characters, or with
+spaces or control characters): there is no caller to key, so the address limit
+is its only bound, and Cloud refuses it.
 A refused request answers HTTP
 `429` with `Retry-After` set to the seconds left in the current window
 (at least 1; the Durable Object returns it), the usual CORS headers for an
