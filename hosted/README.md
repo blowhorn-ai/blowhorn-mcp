@@ -1,75 +1,189 @@
-# blowhorn-mcp-hosted: interim read-only MCP gateway
+# blowhorn-mcp-hosted: interim MCP transport proxy
 
-**This is interim.** `blowhorn-mcp-hosted` is a Cloudflare Worker that serves
-a small, read-only MCP endpoint at <https://mcp.blowhorn.ai/mcp> until
-Blowhorn Cloud serves `/mcp` itself (blowhorn-ai/blowhorn#1509, U3). When
-that ships, this Worker is retired. It is not the Blowhorn MCP server from
-the desktop app, which runs locally on your Mac and is what the rest of this
-repo is about.
+**This is interim.** `blowhorn-mcp-hosted` is a Cloudflare Worker that stands
+in front of Blowhorn Cloud's `/mcp` endpoint at <https://mcp.blowhorn.ai/mcp>
+until Cloud answers on that origin itself (blowhorn-ai/blowhorn#1509, U3).
+When that ships, this Worker is retired. It is not the Blowhorn MCP server
+from the desktop app, which runs locally on your Mac and is what the rest of
+this repo is about.
+
+> **Status of this change: not deployed.** Version 0.2.0 replaces the 0.1.x
+> gateway, which ran four read-only tools itself. Deploying it is a cutover
+> with a precondition: Blowhorn Cloud's `/mcp` must already serve the whole
+> MCP protocol, including legacy Cloud API tokens. See
+> [Before cutover](#before-cutover). Nothing here has been deployed, and
+> nothing here is tested against a real Hydra, Kratos, Cloud or Gemini CLI;
+> see [Tests](#tests).
 
 ## What it does
 
-- **Read-only.** Four tools, every one a GET on the Cloud API:
-  `listContentItems`, `getContentItem`, `getEvents`, `getConnections`. Every
-  tool is annotated `readOnlyHint: true`. No tool can change anything. The
-  one write the gateway makes is the activity event below, in your name.
-- **Your own token, every call.** Send your Blowhorn Cloud API token as
-  `Authorization: Bearer <token>`. Every request must carry a Bearer token;
-  Cloud validates it on each tool call. Without an `Authorization` header
-  the gateway answers `401` with
-  `WWW-Authenticate: Bearer realm="blowhorn-mcp"`; with a malformed one, with
-  `Bearer realm="blowhorn-mcp", error="invalid_token"`. The token is
-  forwarded only to `CLOUD_API_BASE`, never stored, and never appears in a
-  result or a log line.
-- **No OAuth.** There is no OAuth sign-in and no OAuth discovery metadata,
-  so clients that only support OAuth are not supported by this interim
-  gateway. An expired or revoked token is not an HTTP `401`: the tool call
-  answers with a tool error carrying Cloud's `401`.
-- **Stateless.** Streamable HTTP with JSON responses: `POST /mcp` only, no SSE
-  stream, no sessions. `GET` and `DELETE /mcp` answer `405`. One JSON-RPC
-  message per POST: a batch (a JSON array) answers `400`, and a body over
-  1 MB answers `413`.
-- **organizationId.** Every tool takes an optional `organizationId`, sent as
-  the `X-Current-Orgid` header, to act in an organization other than your
-  selected one.
-- **Guarded calls.** Arguments are validated against the tool's input schema
-  before anything is sent; the generator bounds every list, free-text string
-  and number the source schema leaves open, and a request URL over 8 KB is
-  refused. A request is built only from the catalog, and a
-  last check refuses any method but GET and any path not made from a catalog
-  template. Redirects are never followed; a call times out after 20 s, and an
-  answer over 2 MB is refused. Values under secret-named keys (token,
-  password, secret, cookie, credential, api key and so on) are replaced with
-  `[redacted]`.
-- **Activity events.** Every `tools/call` is recorded as one event in your
-  Cloud activity (`POST /api/events`, with your own token). See
-  [What the gateway records](#what-the-gateway-records).
-- **Rate limits.** Per token and per network address; over either, `429`
-  with `Retry-After`. See [Rate limits](#rate-limits).
-- **Logs.** Workers Logs holds only the gateway's own lines: method, tool
-  name, status, outcome and duration; `auth_failed` for a missing or
-  malformed token; `rate_limited`, `ratelimit_failed`,
-  `ratelimit_unbound` and `ratelimit_misconfigured` from the [rate limits](#rate-limits); and the event lines in
-  [What the gateway records](#what-the-gateway-records). Cloudflare's
-  invocation logs, which record request metadata, are turned off in
-  `wrangler.jsonc`.
-- **Browsers.** A request without an `Origin` header is allowed. A request
-  with one must match `ALLOWED_ORIGINS` exactly, else `403`. There is no
-  wildcard CORS.
+The Worker and Cloud's `/mcp` are **one protected resource**,
+`https://mcp.blowhorn.ai/mcp`. The Worker is a transport proxy: it carries
+each MCP request to `https://cloud.blowhorn.ai` and Cloud's answer back. It is
+not an MCP server, not an OAuth authorization server, and not a token
+gateway. It does not read, check, mint, exchange or store a credential, and it
+never forwards one to a REST API.
 
-`GET /healthz` answers `{ ok, name, version, tools, interim: true }` without
-calling Cloud.
+Cloud owns: the canonical resource, the `401` challenge and its
+`resource_metadata`, the protected resource metadata, the authorization
+server (its issuer is `https://cloud.blowhorn.ai/hydra`), the tokens, and the
+tools. A client that starts at `https://mcp.blowhorn.ai/mcp` is told by
+Cloud's own `401` where Cloud's metadata is, reads it from this origin, and
+is sent on to Cloud's issuer to discover, register and sign in. This Worker
+serves no authorization server metadata, no registration, no authorize and no
+token endpoint.
+
+| Path | Methods | Goes to |
+|------|---------|---------|
+| `/healthz` | GET, HEAD | Answered here, no Cloud call: `{ ok, name, version, interim: true }` |
+| `/mcp` | POST, GET, DELETE (OPTIONS answered here for allowed origins) | `https://cloud.blowhorn.ai/mcp` |
+| `/.well-known/oauth-protected-resource/mcp` | GET, HEAD (OPTIONS answered here) | The same path on Cloud |
+| `/.well-known/oauth-protected-resource` | GET, HEAD (OPTIONS answered here) | The same path on Cloud |
+
+Every other path is a `404` from the Worker and nothing is sent to Cloud.
+Another method on these paths is a `405` with `Allow`.
+
+What crosses the Worker, both ways, is filtered by an allowlist:
+
+- **Request to Cloud (`/mcp`):** `Authorization`, `Content-Type`, `Accept`,
+  `Mcp-Protocol-Version`, `Mcp-Session-Id`, `Last-Event-ID`, `traceparent`
+  and `tracestate`, unchanged, plus the Worker's own
+  `User-Agent: blowhorn-mcp-hosted/<version>`. Nothing else: no `Cookie`, no
+  `Host`, `Forwarded` or `X-Forwarded-*`, no `X-Real-IP` or other client
+  identity, no `Origin` or `Referer`, no Cloudflare `CF-*` header. The
+  metadata routes carry only `Accept`, `traceparent`, `tracestate` and the
+  `User-Agent`: no credential goes to a public document.
+- **Answer to the client:** `Content-Type`, `WWW-Authenticate`,
+  `Mcp-Session-Id`, `Allow`, `Retry-After`, `Cache-Control` and `Link`.
+  Never `Set-Cookie`, `Location` or any `Access-Control-*` from Cloud; the
+  Worker sets its own CORS.
+- **The upstream URL** is the constant `https://cloud.blowhorn.ai` plus the
+  route's own path. It is never built from the inbound host, path or query,
+  and `CLOUD_API_BASE` must be exactly that origin or the Worker refuses to
+  serve.
+- **Redirects** from Cloud are never followed and never passed on: the Worker
+  answers `502` (`blowhorn-mcp-1013`).
+- **Bodies.** An answer is streamed to the client as it arrives, never
+  buffered, and the 20 s timeout covers only the status and headers, so a
+  long-lived event stream is not cut. A request body is read once, bounded at
+  1 MB (else `413`, and the read stops at the cap), and sent on as the exact
+  bytes received. It is read, rather than piped, because the per-caller rate
+  limit must see the JSON-RPC method before anything goes to Cloud.
+- **One JSON-RPC message per POST, when a Bearer token is present.** The
+  caller limit counts `tools/call`, and a batch (a JSON array) could hide any
+  number of them, so a request carrying a Bearer token whose body is a batch
+  answers `400`, and one whose body is not JSON answers `400` (`-32700`). A
+  request without a Bearer token is Cloud's to challenge, so its body is
+  carried as is.
+- **Browsers.** On `/mcp`, a request without an `Origin` header is allowed; one
+  with it must match `ALLOWED_ORIGINS` exactly, else `403`, and the preflight
+  is answered for allowed origins only. There is no wildcard CORS on `/mcp`.
+  The two protected resource metadata documents are public (RFC 9728) and
+  are served to any origin with `Access-Control-Allow-Origin: *`; that does
+  not loosen `/mcp`.
+- **Rate limits.** Per network address on every request the Worker would
+  carry (`/mcp` and the metadata documents), and per caller on a `tools/call`;
+  over either, `429` with `Retry-After`. See [Rate limits](#rate-limits).
+- **Logs.** Workers Logs holds only the Worker's own lines:
+  `upstream_failed` (the outcome, the route and the error's type, never a
+  message), `rate_limited`, `ratelimit_failed`, `ratelimit_unbound` and
+  `ratelimit_misconfigured`. Cloudflare's invocation logs, which record
+  request metadata, are turned off in `wrangler.jsonc`. A credential never
+  reaches a log line or a body the Worker writes.
+
+When Cloud cannot be reached the Worker answers a JSON-RPC internal error
+(`-32603`) whose `data` is the failure's ErrorDefinition: `502`
+(`blowhorn-mcp-1011`) when the connection fails, `504` (`blowhorn-mcp-1012`)
+when Cloud has not started to answer in 20 s, `502` (`blowhorn-mcp-1013`) for
+a redirect.
 
 ### Connect a client
+
+A client that supports MCP OAuth needs only the URL, `https://mcp.blowhorn.ai/mcp`:
+it follows Cloud's `401` challenge to Cloud's authorization server. This
+works only once Cloud serves the contract in [Before cutover](#before-cutover).
+
+Clients that send a Cloud API token as a header keep working through the
+same route, if Cloud accepts that token on `/mcp`:
 
 ```bash
 claude mcp add --transport http blowhorn-cloud https://mcp.blowhorn.ai/mcp \
   --header "Authorization: Bearer $BLOWHORN_CLOUD_TOKEN"
 ```
 
+The Worker treats both identically: it does not look inside the token.
+
+### What changes for existing 0.1.x users
+
+0.1.x answered four read-only tools from the Worker and recorded an activity
+event for each call. Those now belong to Cloud, so after cutover:
+
+- Tool results, tool errors and the activity events come from Cloud, not from
+  `blowhorn-mcp-1000` to `blowhorn-mcp-1009`, which are
+  [retired](#error-codes) and never reported again.
+- A missing or bad token is Cloud's `401` with its `WWW-Authenticate`, not the
+  Worker's `Bearer realm="blowhorn-mcp"`. An RFC 6750 client treats the extra
+  `resource_metadata` parameter as part of an ordinary Bearer challenge.
+- `GET` and `DELETE /mcp`, a batch without a token, the response size and
+  timeout guards, argument validation and redaction are Cloud's decisions.
+- The Worker still refuses a batch or a non-JSON body that carries a Bearer
+  token, bounds the request at 1 MB and keeps both rate limits.
+
+## Before cutover
+
+The Worker is deployed automatically on merge to `master`
+(`.github/workflows/hosted-deploy.yml`). A proxy in front of a Cloud that does
+not yet serve all of the following would take `https://mcp.blowhorn.ai/mcp`
+down for existing users. **Verify every item against the deployed Cloud first;
+do not merge this change before.** The Worker does not enforce any of it.
+
+1. **Canonical resource, owned by Cloud.** One configured constant,
+   `https://mcp.blowhorn.ai/mcp` (https, no userinfo, query or fragment, path
+   exactly `/mcp`). The metadata `resource`, the `resource_metadata` URL, the
+   authorization server's `resource` check and token audience all derive from
+   it. Never from `Host`, `X-Forwarded-*`, `Forwarded`, `Origin` or any other
+   request header; the Worker forwards none of them.
+2. **The unauthenticated challenge.** `POST /mcp` with no `Authorization`
+   answers `401` with `WWW-Authenticate: Bearer resource_metadata="https://mcp.blowhorn.ai/.well-known/oauth-protected-resource/mcp"`.
+3. **Metadata at both paths.** `GET /.well-known/oauth-protected-resource/mcp`
+   and `GET /.well-known/oauth-protected-resource` on Cloud answer `200` JSON
+   with `resource` exactly `https://mcp.blowhorn.ai/mcp` and
+   `authorization_servers` naming Cloud's issuer, which serves discovery,
+   registration, authorize (S256, one `resource` equal to the canonical one,
+   else `invalid_target`) and token. Neither redirects.
+4. **Tokens.** An MCP OAuth token is bound to the canonical resource and
+   accepted on `/mcp` only; Cloud's REST API rejects it. A token for any other
+   resource is refused on `/mcp`.
+5. **Legacy Cloud API tokens.** `/mcp` accepts them, serves the same four
+   read-only tools (`listContentItems`, `getContentItem`, `getEvents`,
+   `getConnections`, with `organizationId`) and records the activity event for
+   each `tools/call` itself, in the caller's name. This must be proven by a
+   Cloud test; the Worker no longer does any of it. If Cloud cannot do it, do
+   not cut over.
+6. **No redirects** from `/mcp` or the metadata, and the whole MCP protocol
+   (`initialize`, `notifications/*`, `tools/*`, `ping`, session headers, and
+   any stream Cloud serves) handled on `/mcp`.
+7. **Request parsing parity.** The Worker counts a `tools/call` by reading the
+   JSON-RPC `method`, matching the key without regard to case. Cloud's decoder
+   must read the same message the same way, or a call could skip the caller
+   limit.
+8. **Client address.** The Worker forwards no client address. Cloud must not
+   trust `X-Forwarded-For`, and must limit by token, user or client. Whether
+   `CF-Connecting-IP` at Cloud is the end user or the Worker's egress for a
+   Worker subrequest depends on the zone; verify before relying on it.
+9. Direct requests to `cloud.blowhorn.ai/mcp` bypass the Worker's Origin
+   allowlist and address limit. Closing that (a secret header checked at
+   Cloud's edge, or mTLS) is a follow-up, not part of the OAuth argument.
+
+After cutover, also: the deploy smoke test only checks `401` on an
+unauthenticated `/mcp`; extend it to expect `resource_metadata=` in
+`WWW-Authenticate` and `resource` in the metadata (a workflow change, so a
+separate approval), and have a person sign in with a real MCP client against
+production.
+
 ## Rate limits
 
-Two limits guard `/mcp`. Cloudflare's simple Workers Rate Limiting bindings
+Two limits guard the Worker's routes. Cloudflare's simple Workers Rate Limiting bindings
 (`ratelimits`) do not enforce on a live worker
 ([workers-sdk#16097](https://github.com/cloudflare/workers-sdk/issues/16097)),
 so they are not used. The enforcer is one Durable Object, `RateLimiter`
@@ -83,10 +197,11 @@ preflight are never limited.
 
 | Limit | Config key | Key | Allowed | Checked |
 |-------|------------|-----|---------|---------|
-| Per network address | `address` | `CF-Connecting-IP`; an IPv6 address by its /64 | 1200 requests per 60 s | First, on every `/mcp` request, before the token is read |
-| Per caller | `caller` | The hex SHA-256 of the bearer token, never the token | 60 tool calls per 60 s | Once the token parses, before any Cloud call; only `tools/call` counts |
+| Per network address | `address` | `CF-Connecting-IP`; an IPv6 address by its /64 | 1200 requests per 60 s | First, on every `/mcp` and metadata request, before the token is read |
+| Per caller | `caller` | The hex SHA-256 of the bearer token, never the token | 60 tool calls per 60 s | Once the token and the body parse, before any Cloud call; only `tools/call` counts |
 
-The address limit counts every `/mcp` request, with or without a token: it
+The address limit counts every `/mcp` and protected resource metadata
+request, with or without a token: it
 is the only bound on a client that rotates through made-up tokens, since
 each new token gets its own caller bucket. So one address can still send as
 many requests a minute as the address limit allows (the table above) that
@@ -104,10 +219,12 @@ if shared addresses hit it.
 The caller limit counts only `tools/call` messages: `initialize`,
 notifications, `tools/list` and `ping` never count, so a stateless client
 that sets up a session before each call spends one of its 60 per call. The
-gateway reads and parses the JSON-RPC body once, after the token, and
-refuses a batch (a JSON array) with its usual `400` before the caller limit,
-so a batch counts nothing; a single `tools/call` message counts one. A body
-that does not parse counts nothing and gets the usual `-32700` parse error.
+Worker, when a Bearer token is present, parses the JSON-RPC body once,
+after the address limit, and refuses a batch (a JSON array) with a `400`
+before the caller limit, so a batch counts nothing; a single `tools/call`
+message counts one, however its `method` key is cased. A body that does not
+parse counts nothing and gets the `-32700` parse error. A request without a
+Bearer token spends no caller limit at all: Cloud challenges it.
 A refused request answers HTTP
 `429` with `Retry-After` set to the seconds left in the current window
 (at least 1; the Durable Object returns it), the usual CORS headers for an
@@ -156,7 +273,7 @@ suggests reusing one session instead of initializing before every call).
 `test/ratelimit.test.js` validates the `data` of both limits' 429s
 against the vendored ErrorDefinition construct. `-32029` is in JSON-RPC's
 server-error range and echoes HTTP 429. A refused request is never sent to
-Cloud and records no activity event. It logs one line,
+Cloud. It logs one line,
 `{"outcome":"rate_limited","limit":"address"}`, or for the caller limit
 `"limit":"caller"` with `"caller"` set to the first 8 hex characters of the
 token's hash, never the token or the whole hash.
@@ -172,7 +289,8 @@ is unavailable."), nothing is sent to Cloud, and the isolate logs one
 is refused the same way and every such failure logs `ratelimit_failed` with
 the error's name only, never the message, the key or the token. `GET
 /healthz` still answers, so a probe does not depend on the limiter. The
-limits protect Cloud; they are not authentication. A fixed window is exact
+limits protect Cloud; they are not authentication, and the Worker
+forwards no client address to Cloud. A fixed window is exact
 inside the window and can still allow a full limit again as soon as the
 next window starts.
 
@@ -204,43 +322,6 @@ printf '{"token": "%s"}' "$TOKEN" | curl -sS -X POST https://cloud.blowhorn.ai/r
   `DELETE https://cloud.blowhorn.ai/api/identity/tokens?tokenId=<id>` with
   `Authorization: Bearer <a token you still trust>`.
 
-## What the gateway records
-
-Each `tools/call` posts one event to Cloud's createEvent API
-(`POST /api/events`) with the caller's own token, in the `organizationId`
-the call named when Cloud served the call there, else the caller's selected
-organization. It is posted with `ctx.waitUntil` alongside the tool result
-and never awaited, so it never delays or changes the result. It is never
-retried: a failed post is one `event_post_failed` log line. `initialize` and
-`tools/list` record nothing.
-
-| Field | Value |
-|-------|-------|
-| `category` / `action` | `mcp` / `tool_called` |
-| `severity` | `informational` on success; `warning` for the caller's fault (unknown tool, invalid arguments, refused request, a Cloud 4xx); `error` when Cloud or the path to it failed (5xx, timeout, unreachable, redirect, answer too large, not JSON) |
-| `description` | On success one sentence with the tool and the duration; on failure one saying the tool failed (with Cloud's HTTP status for a Cloud 4xx or 5xx), then the code's `shortDescription` |
-| `operationId` | The W3C `traceparent` trace id of the HTTP request as a UUID, else a random UUID per request |
-| `idempotencyKey` | `mcp-hosted:<uuid>`, one per call |
-| `metadata` | gateway, version, tool, outcome, httpStatus, durationMs, requestId, rpcId, the arguments with secret-named values redacted (only argument names for an unknown tool, invalid arguments, or arguments over 8 KB), and `error` on failure |
-
-`metadata.error` is a MeshKit error (meshery/schemas `MeshkitError`): the
-message shown to the caller, a code, and `probableCause` and
-`suggestedRemediation`. Codes are `blowhorn-mcp-1000` to `blowhorn-mcp-1009`,
-one per failing outcome, provisional until the structured error code registry
-(blowhorn-ai/blowhorn#1662) allocates them. The flat MeshKit lists are derived
-from the code's definition until meshery/schemas ships a nested error
-instance (meshery/schemas#1334). See [Error codes](#error-codes).
-
-Every event is validated before it is sent against the vendored
-`EventPayload`, `Event` (severity, operationId, metadata) and `MeshkitError`
-schemas, carried in the generated catalog's `events` entry; an invalid event
-is not sent and logs `event_invalid`. The caller's token is removed from
-every string in the event.
-
-Nothing is recorded in Cloud for a call with a missing or malformed token, or
-one Cloud answers `401`: there is no user to record it for. Those go only to
-Workers Logs, as `auth_failed` and `skipped_unauthenticated`.
-
 ## Error codes
 
 The gateway's error codes are data, `errors/mcp.json`, in the shape of
@@ -252,66 +333,80 @@ person or their client can do any of them.
 
 | Code | Moniker | Outcome |
 |------|---------|---------|
-| `blowhorn-mcp-1000` | `ErrUnknownTool` | `unknown_tool` |
-| `blowhorn-mcp-1001` | `ErrInvalidArguments` | `invalid_arguments` |
-| `blowhorn-mcp-1002` | `ErrRequestRefused` | `refused` |
-| `blowhorn-mcp-1003` | `ErrCloudRejected` | `cloud_rejected` |
-| `blowhorn-mcp-1004` | `ErrCloudFailed` | `cloud_failed` |
-| `blowhorn-mcp-1005` | `ErrCloudTimeout` | `timeout` |
-| `blowhorn-mcp-1006` | `ErrCloudUnreachable` | `unreachable` |
-| `blowhorn-mcp-1007` | `ErrCloudRedirect` | `redirect` |
-| `blowhorn-mcp-1008` | `ErrResponseTooLarge` | `too_large` |
-| `blowhorn-mcp-1009` | `ErrResponseNotJson` | `not_json` |
-| `blowhorn-mcp-1010` | `ErrRateLimited` | `rate_limited`, a [429](#rate-limits), never an event |
+| `blowhorn-mcp-1000` | `ErrUnknownTool` | `retired` |
+| `blowhorn-mcp-1001` | `ErrInvalidArguments` | `retired` |
+| `blowhorn-mcp-1002` | `ErrRequestRefused` | `retired` |
+| `blowhorn-mcp-1003` | `ErrCloudRejected` | `retired` |
+| `blowhorn-mcp-1004` | `ErrCloudFailed` | `retired` |
+| `blowhorn-mcp-1005` | `ErrCloudTimeout` | `retired` |
+| `blowhorn-mcp-1006` | `ErrCloudUnreachable` | `retired` |
+| `blowhorn-mcp-1007` | `ErrCloudRedirect` | `retired` |
+| `blowhorn-mcp-1008` | `ErrResponseTooLarge` | `retired` |
+| `blowhorn-mcp-1009` | `ErrResponseNotJson` | `retired` |
+| `blowhorn-mcp-1010` | `ErrRateLimited` | `rate_limited`, a [429](#rate-limits) |
+| `blowhorn-mcp-1011` | `ErrUpstreamUnreachable` | `upstream_unreachable`, a 502 |
+| `blowhorn-mcp-1012` | `ErrUpstreamTimeout` | `upstream_timeout`, a 504 |
+| `blowhorn-mcp-1013` | `ErrUpstreamRedirect` | `upstream_redirect`, a 502 |
+
+`retired` codes (1000 to 1009) are tombstones. The 0.1.x gateway ran four
+tools itself and reported these; Cloud does that now, so nothing reports
+them. Their definitions stay in `errors/mcp.json` and `RETIRED` in
+`src/errors.js` lists them, so a number is never reused and an old reference
+still resolves.
 
 `make hosted-check` validates every definition against the vendored
 ErrorDefinition construct (`schemas/vendor/blowhorn/`) and checks the
 gateway's own rules (`scripts/registry.js`): the component is
 `blowhorn`/`mcp`, codes and monikers are unique, `nextErrorCode` is one
 past the highest code, every definition has at least one probable cause and
-every cause at least one remediation, and every outcome `src/errors.js` maps
-has a definition. `test/errors.test.js` holds the table above to the
-definitions and `CODES`, both ways. blowhorn-ai/blowhorn's
-registry has further rules of its own that are not copied here. To add a
-code: add its definition with the number in `nextErrorCode`, bump
-`nextErrorCode`, then map its outcome in `src/errors.js`. Numbers are never
-reused.
+every cause at least one remediation, every outcome `src/errors.js` maps has
+a definition, and every definition is either mapped or retired, never both.
+`test/errors.test.js` holds the table above to the definitions, `CODES` and
+`RETIRED`, both ways. blowhorn-ai/blowhorn's registry has further rules of
+its own that are not copied here. To add a code: add its definition with the
+number in `nextErrorCode`, bump `nextErrorCode`, then map its outcome in
+`src/errors.js` and add its row above. Numbers are never reused.
 
-## Where the tools come from
+## Tests
 
-The catalog, `src/catalog.generated.json`, is generated from the meshery/schemas
-OpenAPI files vendored in `schemas/vendor/meshery-schemas/` at a pinned
-commit (see `schemas/vendor/SOURCES.json`). Every operation whose `x-mcp`
-says `expose: true` becomes a tool; the generator refuses one that is not a
-GET, has no `operationId`, or whose `x-mcp` fails the vendored McpOperation
-schema. Every `$ref` is inlined.
+`make hosted-check` runs `node --import ./test/support/register.js --test`,
+which resolves `cloudflare:workers` to the DurableObject stub in
+`test/support/`. The tests run behavior, never grep source: they call
+`worker.fetch` with a stand-in for Cloud behind `globalThis.fetch`.
 
-- `make hosted-generate`: rewrite the catalog. Never hand-edit it.
-- `make hosted-schemas-refresh`: re-download the vendored files (network);
-  change the pin in `SOURCES` in `scripts/schemas-refresh.js` first. It also
-  vendors `ErrorDefinition.schema.json` from blowhorn-ai/blowhorn into
-  `schemas/vendor/blowhorn/`; that repo is private, so run it with a GitHub
-  token: `GITHUB_TOKEN=$(gh auth token) make hosted-schemas-refresh`.
-- `make hosted-check`: vendor sha256, files missing from `SOURCES.json`,
-  catalog drift and the error registry, then the tests. `make check` at the
-  repo root runs it.
+| File | What it holds |
+|------|---------------|
+| `test/worker.test.js` | Routes and methods, the Origin policy, the preflight, public metadata, the `CLOUD_API_BASE` guard |
+| `test/proxy.test.js` | Cloud's challenge and metadata relayed verbatim, header filtering both ways, body fidelity, redirects, streaming, size bounds, 502 and 504 |
+| `test/oauth-contract.test.js` | The official MCP SDK OAuth client through the Worker: 401, discovery, registration, code with S256 and the canonical `resource`, token, `tools/list`, `tools/call` |
+| `test/ratelimit.test.js` | Both Durable Object limits, their config and README tables, the fail-closed paths |
+| `test/errors.test.js`, `test/vendor.test.js` | The error registry with its tombstones, and the vendored schema pin |
+| `test/require-node.test.js` | The deploy's Node check |
+
+**`test/oauth-contract.test.js` is a fake-upstream contract test.** Its Cloud is
+a small fake (`test/support/harness.js`) that implements the contract in
+[Before cutover](#before-cutover). It is **not** real Ory Hydra or Kratos, not
+Blowhorn Cloud, not Gemini CLI, and not an end-to-end test of anything
+deployed. It shows that the Worker carries what the contract says, and that
+the official SDK completes OAuth through it. It cannot show that Cloud serves
+the contract. The real local-stack run (Hydra, Kratos and Cloud together) is a
+separate gate owned by the Cloud change, and it, plus a person signing in
+with a real client, must pass before any cutover.
 
 ## Layout
 
 | Path | What it is |
 |------|------------|
-| `src/index.js` | The Worker: routes, Origin and Bearer checks, rate limits, the MCP server |
-| `src/cloud.js` | Request building, the GET-only dispatch, result shaping |
-| `src/events.js` | The activity event for each call, its validation and its POST |
-| `src/errors.js` | Each failing outcome's code in `errors/mcp.json` |
+| `src/index.js` | The Worker: routes, Origin policy, rate limits, the one-message rule |
+| `src/proxy.js` | Route table, header allowlists, bounded body read, the fetch to Cloud, failure answers |
+| `src/auth.js` | Bearer token parsing, to key the caller limit |
+| `src/errors.js` | Each reported outcome's code, and the retired codes |
 | `src/ratelimit.js` | The RateLimiter Durable Object, its keys and the 429 |
 | `schemas/rate-limits.schema.json` | The `RATE_LIMITS` config shape |
+| `schemas/vendor/` | The ErrorDefinition construct, byte for byte, pinned in `SOURCES.json` (`make hosted-schemas-refresh`) |
 | `errors/mcp.json` | The error code registry |
-| `src/auth.js` | Bearer token parsing |
-| `src/redact.js` | Secret-named key redaction, a port of the Blowhorn engine's rule |
-| `src/catalog.generated.json` | Generated tool catalog |
-| `scripts/` | generate, check-drift, schemas-refresh, registry (the error registry check), require-node (the deploy's Node check) |
-| `test/` | Behavior tests. `make hosted-check` runs `node --import ./test/support/register.js --test`, which resolves `cloudflare:workers` to the DurableObject stub in `test/support/` |
+| `scripts/` | check-drift, registry (the error registry check), vendor (the vendor check), schemas-refresh, require-node (the deploy's Node check) |
+| `test/` | Behavior tests, above |
 | `wrangler.jsonc` | Worker config, the rate limits included |
 | `.nvmrc` | The Node major the deploy needs (22) |
 
@@ -319,7 +414,7 @@ schema. Every `$ref` is inlined.
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `CLOUD_API_BASE` | `https://cloud.blowhorn.ai` | Cloud API base; must be exactly `https://cloud.blowhorn.ai`, else the gateway refuses to serve |
+| `CLOUD_API_BASE` | `https://cloud.blowhorn.ai` | Cloud base; must be exactly `https://cloud.blowhorn.ai`, else the Worker refuses to serve |
 | `ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call `/mcp` |
 | `RATE_LIMITS` | (required) | JSON string: `address` and `caller` limits, enforced by the `RATE_LIMITER` Durable Object. See [Rate limits](#rate-limits) |
 
@@ -328,7 +423,8 @@ schema. Every `$ref` is inlined.
 CI deploys on every push to `master` that touches `hosted/**`
 (`.github/workflows/hosted-deploy.yml`, `production` environment), runs
 `make hosted-deploy`, then smoke-tests `/healthz` (200) and unauthenticated
-`/mcp` (401). It can also be run by hand with workflow_dispatch. The manual
+`/mcp` (401). The smoke test does not yet check the challenge's
+`resource_metadata` or the metadata document; see [Before cutover](#before-cutover). It can also be run by hand with workflow_dispatch. The manual
 path below still works.
 
 From the VM only, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
@@ -357,8 +453,8 @@ Node versions are split:
   stops before wrangler runs, with one sentence naming the version
   (`scripts/require-node.js`, tested in `test/require-node.test.js`).
 - **Everything else: Node 20 or later**, `engines.node` in `package.json`.
-  `make hosted-install`, `make hosted-generate` and `make hosted-check` (the
-  Worker tests) run on Node 20, and CI checks that. On Node 20, `npm ci`
+  `make hosted-install` and `make hosted-check` (the Worker tests) run on
+  Node 20, and CI checks that. On Node 20, `npm ci`
   warns `EBADENGINE` for wrangler and two of its dependencies;
   `make hosted-install` keeps that a warning.
 

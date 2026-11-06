@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// blowhorn-mcp-hosted: the interim read-only MCP gateway (see README.md).
+// blowhorn-mcp-hosted: the interim MCP transport proxy (see README.md).
 // Deployed with `make hosted-deploy` from the VM only. No routes block: the
 // mcp.blowhorn.ai custom domain is attached through the Cloudflare API.
 {
@@ -15,7 +15,7 @@
   "vars": {
     "CLOUD_API_BASE": "https://cloud.blowhorn.ai",
     "ALLOWED_ORIGINS": "",
-    // Rate limits on /mcp (src/ratelimit.js, schemas/rate-limits.schema.json,
+    // Rate limits (src/ratelimit.js, schemas/rate-limits.schema.json,
     // README.md, Rate limits). JSON, parsed at request time. A refused
     // request answers 429 with Retry-After and blowhorn-mcp-1010, and is
     // never sent to Cloud or recorded. Each limit lives only here (and in
@@ -27,12 +27,13 @@
     // RATE_LIMITER binding fails closed (503) and logs ratelimit_unbound.
     //
     // caller: keyed by the hex SHA-256 of the bearer token, never the token.
-    // Checked once the token parses, before any Cloud call; only tools/call
-    // messages count, never initialize, tools/list or ping. 60 per 60 s.
+    // Checked once the token and the body parse, before any Cloud call; only
+    // tools/call messages count, never initialize, tools/list or ping. 60 per
+    // 60 s.
     //
     // address: keyed by CF-Connecting-IP (an IPv6 address by its /64).
-    // Checked before authentication on every /mcp request; a request it
-    // refuses gets no auth work and no Cloud call. It is the only bound on a
+    // Checked before anything else on every /mcp and protected resource
+    // metadata request; a request it refuses gets no work and no Cloud call. It is the only bound on a
     // client that rotates made-up tokens, since each new token gets its own
     // caller bucket: one address can still send up to its limit a minute of
     // requests that reach Cloud and are refused there with 401. Everyone

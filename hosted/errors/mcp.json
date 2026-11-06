@@ -1,7 +1,7 @@
 {
-  "$comment": "The hosted MCP gateway's error codes (blowhorn-ai/blowhorn internal/design/structured-error-codes.md), in the shape of blowhorn-ai/blowhorn's engine registry. Literal text only; nothing is built at run time. Every definition validates against the vendored ErrorDefinition construct (hosted/schemas/vendor/blowhorn/schemas/dist/ErrorDefinition.schema.json), checked by make hosted-check. The numbers are provisional until the registry (blowhorn-ai/blowhorn#1662) allocates them. No remediation carries an action: only a person or their client can do any of them. src/errors.js maps each gateway outcome to its code; an activity event's description gives its definition's shortDescription, the only copy of that text, and a 429's error.data is the blowhorn-mcp-1010 definition with only the refusing limit's cause. Numbers are never reused; nextErrorCode is one past the highest, checked by make hosted-check.",
+  "$comment": "The hosted MCP gateway's error codes (blowhorn-ai/blowhorn internal/design/structured-error-codes.md), in the shape of blowhorn-ai/blowhorn's engine registry. Literal text only; nothing is built at run time. Every definition validates against the vendored ErrorDefinition construct (hosted/schemas/vendor/blowhorn/schemas/dist/ErrorDefinition.schema.json), checked by make hosted-check. The numbers are provisional until the registry (blowhorn-ai/blowhorn#1662) allocates them. No remediation carries an action: only a person or their client can do any of them. src/errors.js maps each outcome the gateway reports to its code in CODES, and lists the retired codes (1000-1009, from the 0.1.x gateway that ran tools itself) in RETIRED: tombstones whose definitions stay here so a number is never reused. A 429's error.data is the blowhorn-mcp-1010 definition with only the refusing limit's cause. nextErrorCode is one past the highest, checked by make hosted-check.",
   "component": {"type": "blowhorn", "name": "mcp"},
-  "nextErrorCode": 1011,
+  "nextErrorCode": 1014,
   "definitions": [
     {
       "code": "blowhorn-mcp-1000",
@@ -9,7 +9,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "warning",
       "shortDescription": "The tool is not one this gateway offers.",
-      "longDescription": "A tools/call named a tool that is not in the gateway's catalog. The catalog is generated from the vendored meshery/schemas operations and holds only reads, so nothing was sent to Blowhorn Cloud.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. A tools/call named a tool that is not in the gateway's catalog. The catalog is generated from the vendored meshery/schemas operations and holds only reads, so nothing was sent to Blowhorn Cloud.",
       "probableCauses": [
         {
           "id": "tool-not-offered",
@@ -27,7 +27,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "warning",
       "shortDescription": "The arguments did not match the tool's input schema.",
-      "longDescription": "The gateway checks every call's arguments against the tool's input schema before it sends anything. These did not pass, so nothing was sent to Blowhorn Cloud. The answer names the failing locations, never the values.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. The gateway checks every call's arguments against the tool's input schema before it sends anything. These did not pass, so nothing was sent to Blowhorn Cloud. The answer names the failing locations, never the values.",
       "probableCauses": [
         {
           "id": "argument-mismatch",
@@ -45,7 +45,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "warning",
       "shortDescription": "The gateway refused to send the request.",
-      "longDescription": "The arguments passed the tool's schema, but the request they make is one the gateway never sends, such as a path value that is not one segment or a URL over 8 KB. Nothing was sent to Blowhorn Cloud.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. The arguments passed the tool's schema, but the request they make is one the gateway never sends, such as a path value that is not one segment or a URL over 8 KB. Nothing was sent to Blowhorn Cloud.",
       "probableCauses": [
         {
           "id": "bad-path-value",
@@ -70,7 +70,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "warning",
       "shortDescription": "Blowhorn Cloud answered with a client error.",
-      "longDescription": "The gateway sent the call to Blowhorn Cloud with the caller's own token, and Cloud answered with a 4xx status. The tool result carries Cloud's message.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. The gateway sent the call to Blowhorn Cloud with the caller's own token, and Cloud answered with a 4xx status. The tool result carries Cloud's message.",
       "probableCauses": [
         {
           "id": "not-found",
@@ -95,7 +95,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "error",
       "shortDescription": "Blowhorn Cloud answered with a server error.",
-      "longDescription": "The gateway sent the call to Blowhorn Cloud, and Cloud answered with a 5xx status. The call is a read, so trying it again is safe.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. The gateway sent the call to Blowhorn Cloud, and Cloud answered with a 5xx status. The call is a read, so trying it again is safe.",
       "probableCauses": [
         {
           "id": "cloud-error",
@@ -114,7 +114,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "error",
       "shortDescription": "Blowhorn Cloud did not answer in time.",
-      "longDescription": "The gateway gives each call to Blowhorn Cloud 20 seconds, for the status and the whole body. Cloud's answer did not arrive in that time, so the gateway stopped waiting.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. The gateway gives each call to Blowhorn Cloud 20 seconds, for the status and the whole body. Cloud's answer did not arrive in that time, so the gateway stopped waiting.",
       "probableCauses": [
         {
           "id": "cloud-slow",
@@ -139,7 +139,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "error",
       "shortDescription": "The gateway could not reach Blowhorn Cloud.",
-      "longDescription": "The gateway could not open a connection to Blowhorn Cloud, or the connection failed before an answer came back. The call is a read, so trying it again is safe.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. The gateway could not open a connection to Blowhorn Cloud, or the connection failed before an answer came back. The call is a read, so trying it again is safe.",
       "probableCauses": [
         {
           "id": "cloud-unavailable",
@@ -157,7 +157,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "error",
       "shortDescription": "Blowhorn Cloud answered with a redirect, which the gateway does not follow.",
-      "longDescription": "The gateway never follows a redirect, so the caller's token can never be sent anywhere but Blowhorn Cloud's API. Cloud, or something in front of it, answered with one.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. The gateway never follows a redirect, so the caller's token can never be sent anywhere but Blowhorn Cloud's API. Cloud, or something in front of it, answered with one.",
       "probableCauses": [
         {
           "id": "endpoint-moved",
@@ -176,7 +176,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "error",
       "shortDescription": "Blowhorn Cloud's answer was too large to return.",
-      "longDescription": "The gateway returns at most 2 MB of Blowhorn Cloud's answer to one call. This answer was larger, so the gateway stopped reading it and returned nothing from it.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. The gateway returns at most 2 MB of Blowhorn Cloud's answer to one call. This answer was larger, so the gateway stopped reading it and returned nothing from it.",
       "probableCauses": [
         {
           "id": "too-much-data",
@@ -194,7 +194,7 @@
       "component": {"type": "blowhorn", "name": "mcp"},
       "severity": "error",
       "shortDescription": "Blowhorn Cloud's answer was not JSON.",
-      "longDescription": "Every Blowhorn Cloud API the gateway calls answers with JSON. This answer did not parse as JSON, so the gateway returned none of it.",
+      "longDescription": "Retired: the gateway 0.2.0 no longer runs tools, so nothing reports this code; Blowhorn Cloud does. The number is kept so it is never reused. Every Blowhorn Cloud API the gateway calls answers with JSON. This answer did not parse as JSON, so the gateway returned none of it.",
       "probableCauses": [
         {
           "id": "unexpected-body",
@@ -233,6 +233,62 @@
         }
       ],
       "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1010/"
+    },
+    {
+      "code": "blowhorn-mcp-1011",
+      "moniker": "ErrUpstreamUnreachable",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "The gateway could not reach Blowhorn Cloud.",
+      "longDescription": "The gateway carries every MCP request to Blowhorn Cloud's /mcp endpoint unchanged. It could not open a connection to Cloud, or the connection failed before an answer came back, so nothing was returned from Cloud. The request is answered 502.",
+      "probableCauses": [
+        {
+          "id": "cloud-unavailable",
+          "description": "Blowhorn Cloud or the network between it and the gateway was unavailable.",
+          "remediations": [
+            {"id": "try-again", "description": "Try again in a few minutes."},
+            {"id": "contact-support", "description": "If it keeps failing, contact Blowhorn support."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1011/"
+    },
+    {
+      "code": "blowhorn-mcp-1012",
+      "moniker": "ErrUpstreamTimeout",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "Blowhorn Cloud did not start answering in time.",
+      "longDescription": "The gateway gives Blowhorn Cloud 20 seconds to start its answer (the status and headers). Cloud did not, so the gateway stopped waiting and answered 504. A streamed body, once it has started, is not timed out.",
+      "probableCauses": [
+        {
+          "id": "cloud-slow",
+          "description": "Blowhorn Cloud was slow to answer.",
+          "remediations": [
+            {"id": "try-again", "description": "Try again in a few minutes."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1012/"
+    },
+    {
+      "code": "blowhorn-mcp-1013",
+      "moniker": "ErrUpstreamRedirect",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "error",
+      "shortDescription": "Blowhorn Cloud answered with a redirect, which the gateway does not follow.",
+      "longDescription": "The gateway never follows a redirect, so a caller's credentials can never be sent anywhere but Blowhorn Cloud's /mcp endpoint, and it never hands a Cloud redirect to the client. Cloud, or something in front of it, answered with one; the gateway answered 502.",
+      "probableCauses": [
+        {
+          "id": "endpoint-moved",
+          "description": "Blowhorn Cloud moved the endpoint, or a proxy in front of it redirected the request.",
+          "remediations": [
+            {"id": "try-again", "description": "Try again in a few minutes."},
+            {"id": "contact-support", "description": "If it keeps failing, contact Blowhorn support."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1013/"
     }
   ]
 }
