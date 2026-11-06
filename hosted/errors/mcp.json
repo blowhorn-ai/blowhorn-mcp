@@ -1,7 +1,7 @@
 {
   "$comment": "The hosted MCP gateway's error codes (blowhorn-ai/blowhorn internal/design/structured-error-codes.md), in the shape of blowhorn-ai/blowhorn's engine registry. Literal text only; nothing is built at run time. Every definition validates against the vendored ErrorDefinition construct (hosted/schemas/vendor/blowhorn/schemas/dist/ErrorDefinition.schema.json), checked by make hosted-check. The numbers are provisional until the registry (blowhorn-ai/blowhorn#1662) allocates them. No remediation carries an action: only a person or their client can do any of them. src/errors.js maps each outcome the gateway reports to its code in CODES, and lists the retired codes (1000-1009, from the 0.1.x gateway that ran tools itself) in RETIRED: tombstones whose definitions stay here so a number is never reused. A 429's error.data is the blowhorn-mcp-1010 definition with only the refusing limit's cause. nextErrorCode is one past the highest, checked by make hosted-check.",
   "component": {"type": "blowhorn", "name": "mcp"},
-  "nextErrorCode": 1014,
+  "nextErrorCode": 1015,
   "definitions": [
     {
       "code": "blowhorn-mcp-1000",
@@ -289,6 +289,24 @@
         }
       ],
       "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1013/"
+    },
+    {
+      "code": "blowhorn-mcp-1014",
+      "moniker": "ErrRequestBodyTimeout",
+      "component": {"type": "blowhorn", "name": "mcp"},
+      "severity": "warning",
+      "shortDescription": "The request body did not arrive in time.",
+      "longDescription": "The gateway gives a client 20 seconds to finish sending a request body (at most 1 MB). The body was not complete by then, so the gateway stopped reading it, sent nothing to Blowhorn Cloud, and answered 408.",
+      "probableCauses": [
+        {
+          "id": "slow-client",
+          "description": "The client or the network between it and the gateway sent the body too slowly, or stalled.",
+          "remediations": [
+            {"id": "send-again", "description": "Send the request again on a working connection."}
+          ]
+        }
+      ],
+      "referenceUrl": "https://blowhorn.ai/docs/reference/error-codes/blowhorn-mcp-1014/"
     }
   ]
 }

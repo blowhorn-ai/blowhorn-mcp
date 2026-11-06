@@ -444,9 +444,11 @@ test("the address key is the IPv4 address, or the IPv6 address's /64", async (t)
   ];
   for (const [ip, key] of cases) assert.strictEqual(addressKey(ip), key, String(ip));
 
-  mockCloud(t);
+  mockCloudOk(t);
   const env = envWith();
-  for (const ip of ["2001:db8:1:2::a", "2001:db8:1:2:ffff::b", "2001:db8:1:3::a"]) await worker.fetch(rpc("initialize", INIT, { ...auth, "CF-Connecting-IP": ip }), env, {});
+  for (const ip of ["2001:db8:1:2::a", "2001:db8:1:2:ffff::b", "2001:db8:1:3::a"]) {
+    assert.strictEqual((await worker.fetch(rpc("initialize", INIT, { ...auth, "CF-Connecting-IP": ip }), env, {})).status, 200);
+  }
   assert.deepStrictEqual(env.keys.address, ["2001:db8:1:2::/64", "2001:db8:1:2::/64", "2001:db8:1:3::/64"]);
 });
 

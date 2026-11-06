@@ -403,3 +403,56 @@ test("legacy header tokens are carried to Cloud exactly like any other Bearer: t
   assert.strictEqual(cloud.seen.at(-1).headers.authorization, `Bearer ${TOKEN}`);
   assert.strictEqual(cloud.seen.at(-1).url, `${CLOUD}/mcp`);
 });
+
+test("Cloud's Mcp-Protocol-Version answer header comes back, with Cloud's value", async (t) => {
+  mockFetch(t, () => new Response("{}", { status: 200, headers: { "Content-Type": "application/json", "Mcp-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "s-9" } }));
+  const res = await worker.fetch(post(initialize, auth), ENV, {});
+  assert.strictEqual(res.headers.get("Mcp-Protocol-Version"), "2025-06-18");
+  assert.strictEqual(res.headers.get("Mcp-Session-Id"), "s-9");
+});
+
+test("a client that trickles its body is cut off at the 20 s budget: 408 blowhorn-mcp-1014, body cancelled, nothing sent to Cloud", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const calls = mockFetch(t, () => assert.fail("Cloud was called"));
+  let cancelled = false;
+  const stalled = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"jsonrpc":'));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const pending = worker.fetch(new Request(MCP, { method: "POST", headers: { "Content-Type": "application/json", Accept: ACCEPT, ...auth }, body: stalled, duplex: "half" }), ENV, {});
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  t.mock.timers.tick(TIMEOUT_MS - 1);
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  assert.strictEqual(cancelled, false, "still inside the budget");
+  t.mock.timers.tick(1);
+  const res = await pending;
+  assert.strictEqual(res.status, 408);
+  assert.strictEqual((await res.json()).error.data.code, CODES.request_timeout);
+  assert.strictEqual(cancelled, true);
+  assert.strictEqual(calls.length, 0);
+});
+
+test("a body that arrives in time is unaffected by the read budget, and its timer is cleared", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const cloud = fakeCloud({ legacyTokens: [TOKEN] });
+  mockFetch(t, (url, init) => cloud.handle(url, init));
+  const res = await worker.fetch(post(initialize, auth), ENV, {});
+  assert.strictEqual(res.status, 200);
+  assert.doesNotThrow(() => t.mock.timers.tick(TIMEOUT_MS * 2));
+});
+
+test("a compressed body is not decoded or forwarded: with a Bearer it is a 400 parse error, and Content-Encoding never goes to Cloud", async (t) => {
+  const cloud = fakeCloud({ legacyTokens: [TOKEN] });
+  const calls = mockFetch(t, (url, init) => cloud.handle(url, init));
+  const gz = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xab, 0x56]);
+  const res = await worker.fetch(post(gz, { ...auth, "Content-Encoding": "gzip" }), ENV, {});
+  assert.strictEqual(res.status, 400);
+  assert.strictEqual((await res.json()).error.code, -32700);
+  const plain = await worker.fetch(post(initialize, { ...auth, "Content-Encoding": "gzip" }), ENV, {});
+  assert.strictEqual(plain.status, 200);
+  assert.strictEqual(sent(calls[0])["content-encoding"], undefined);
+});
