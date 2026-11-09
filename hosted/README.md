@@ -17,28 +17,30 @@ this repo is about.
 
 ## What it does
 
-The Worker and Cloud's `/mcp` are **one protected resource**,
-`https://mcp.blowhorn.ai/mcp`. The Worker is a transport proxy: it carries
-each MCP request to `https://cloud.blowhorn.ai` and Cloud's answer back. It is
-not an MCP server, not an OAuth authorization server, and not a token
+Clients connect at `https://mcp.blowhorn.ai/mcp`. The Worker is a transport
+proxy: it carries each MCP request to Cloud's `/mcp` and Cloud's answer back.
+It is not an MCP server, not an OAuth authorization server, and not a token
 gateway. It does not read, check, mint, exchange or store a credential, and it
 never forwards one to a REST API.
 
-Cloud owns: the canonical resource, the `401` challenge and its
-`resource_metadata`, the protected resource metadata, the authorization
-server (its issuer is `https://cloud.blowhorn.ai/hydra`), the tokens, and the
-tools. A client that starts at `https://mcp.blowhorn.ai/mcp` is told by
-Cloud's own `401` where Cloud's metadata is, reads it from this origin, and
-is sent on to Cloud's issuer to discover, register and sign in. This Worker
-serves no authorization server metadata, no registration, no authorize and no
-token endpoint.
+Cloud owns the design-doc deployment URL and preferred token audience
+`https://cloud.blowhorn.ai/mcp` (see `internal/design/hosted-mcp-server.md`),
+token validation, and the tools. The Worker serves RFC 9728 protected resource
+metadata locally (`src/metadata.js`) with `resource` equal to the public connect
+URL `https://mcp.blowhorn.ai/mcp` (required by the MCP OAuth client) and
+`authorization_servers` naming Cloud's Blowhorn issuer
+(`https://cloud.blowhorn.ai/hydra`). It rewrites Cloud's `401` `WWW-Authenticate`
+so `resource_metadata` points at this origin, and forwards every Bearer token to
+Cloud's `/mcp` unchanged.
+This Worker still serves no authorization server metadata, no registration, no
+authorize and no token endpoint.
 
 | Path | Methods | Goes to |
 |------|---------|---------|
 | `/healthz` | GET, HEAD | Answered here, no Cloud call: `{ ok, name, version, interim: true }` |
-| `/mcp` | POST, GET, DELETE (OPTIONS answered here for allowed origins) | `https://cloud.blowhorn.ai/mcp` |
-| `/.well-known/oauth-protected-resource/mcp` | GET, HEAD (OPTIONS answered here) | The same path on Cloud |
-| `/.well-known/oauth-protected-resource` | GET, HEAD (OPTIONS answered here) | The same path on Cloud |
+| `/mcp` | POST, GET, DELETE (OPTIONS answered here for allowed origins) | `https://cloud.blowhorn.ai/mcp` (Bearer forwarded; `WWW-Authenticate` rewritten) |
+| `/.well-known/oauth-protected-resource/mcp` | GET, HEAD (OPTIONS answered here) | Answered here (RFC 9728) |
+| `/.well-known/oauth-protected-resource` | GET, HEAD (OPTIONS answered here) | Answered here (same document) |
 
 Every other path is a `404` from the Worker and nothing is sent to Cloud.
 Another method on these paths is a `405` with `Allow`.
@@ -51,8 +53,7 @@ What crosses the Worker, both ways, is filtered by an allowlist:
   `User-Agent: blowhorn-mcp-hosted/<version>`. Nothing else: no `Cookie`, no
   `Host`, `Forwarded` or `X-Forwarded-*`, no `X-Real-IP` or other client
   identity, no `Origin` or `Referer`, no Cloudflare `CF-*` header. The
-  metadata routes carry only `Accept`, `traceparent`, `tracestate` and the
-  `User-Agent`: no credential goes to a public document.
+  metadata routes are answered locally and never reach Cloud.
 - **Answer to the client:** `Content-Type`, `WWW-Authenticate`,
   `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Allow`, `Retry-After`, `Cache-Control` and `Link`.
   Never `Set-Cookie`, `Location` or any `Access-Control-*` from Cloud; the
@@ -141,23 +142,28 @@ not yet serve all of the following would take `https://mcp.blowhorn.ai/mcp`
 down for existing users. **Verify every item against the deployed Cloud first;
 do not merge this change before.** The Worker does not enforce any of it.
 
-1. **Canonical resource, owned by Cloud.** One configured constant,
+1. **Public resource vs Cloud deployment URL.** Clients of this Worker use
    `https://mcp.blowhorn.ai/mcp` (https, no userinfo, query or fragment, path
-   exactly `/mcp`). The metadata `resource`, the `resource_metadata` URL, the
-   authorization server's `resource` check and token audience all derive from
-   it. Never from `Host`, `X-Forwarded-*`, `Forwarded`, `Origin` or any other
-   request header; the Worker forwards none of them.
+   exactly `/mcp`). The MCP OAuth client requires metadata `resource` to match
+   that connect URL, so the Worker's RFC 9728 document uses it. The Worker
+   forwards every request to Cloud at `https://cloud.blowhorn.ai/mcp` (the
+   design-doc deployment URL). Cloud must accept tokens whose audience is the
+   public resource on that proxied path. Never from `Host`, `X-Forwarded-*`,
+   `Forwarded`, `Origin` or any other request header; the Worker forwards none
+   of them.
 2. **The unauthenticated challenge.** `POST /mcp` with no `Authorization`
-   answers `401` with `WWW-Authenticate: Bearer resource_metadata="https://mcp.blowhorn.ai/.well-known/oauth-protected-resource/mcp"`.
+   answers `401` with `WWW-Authenticate: Bearer resource_metadata="https://mcp.blowhorn.ai/.well-known/oauth-protected-resource/mcp"`
+   (the Worker rewrites Cloud's challenge when needed).
 3. **Metadata at both paths.** `GET /.well-known/oauth-protected-resource/mcp`
-   and `GET /.well-known/oauth-protected-resource` on Cloud answer `200` JSON
-   with `resource` exactly `https://mcp.blowhorn.ai/mcp` and
-   `authorization_servers` naming Cloud's issuer, which serves discovery,
-   registration, authorize (S256, one `resource` equal to the canonical one,
-   else `invalid_target`) and token. Neither redirects.
-4. **Tokens.** An MCP OAuth token is bound to the canonical resource and
-   accepted on `/mcp` only; Cloud's REST API rejects it. A token for any other
-   resource is refused on `/mcp`.
+   and `GET /.well-known/oauth-protected-resource` on this Worker answer `200`
+   JSON with `resource` exactly `https://mcp.blowhorn.ai/mcp` and
+   `authorization_servers` naming `https://cloud.blowhorn.ai/hydra`, which
+   serves discovery, registration, authorize (S256, one `resource` equal to
+   the public resource, else `invalid_target`) and token. Neither redirects.
+4. **Tokens.** An MCP OAuth token is bound to `https://mcp.blowhorn.ai/mcp` and
+   must be accepted on Cloud's `/mcp` when forwarded; Cloud's REST API rejects
+   it. A token for any other resource is refused on `/mcp`. The Worker
+   forwards the Bearer header unchanged.
 5. **Legacy Cloud API tokens.** `/mcp` accepts them, serves the same four
    read-only tools (`listContentItems`, `getContentItem`, `getEvents`,
    `getConnections`, with `organizationId`) and records the activity event for

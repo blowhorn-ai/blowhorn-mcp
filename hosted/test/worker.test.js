@@ -161,6 +161,7 @@ test("public metadata is readable from any origin, and that does not loosen /mcp
     assert.strictEqual(res.status, 200, String(Origin));
     assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), "*");
     assert.strictEqual(JSON.parse(text).resource, MCP);
+    assert.deepStrictEqual(JSON.parse(text).authorization_servers, ["https://cloud.blowhorn.ai/hydra"]);
     // /mcp with that very Origin is judged by the allowlist as before.
     const mcpStatus = (await call(rpc("initialize", INIT, Origin ? { Origin } : {}))).res.status;
     assert.strictEqual(mcpStatus, Origin === FOREIGN || Origin === "null" ? 403 : 401, String(Origin));

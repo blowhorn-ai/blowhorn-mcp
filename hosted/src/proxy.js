@@ -2,10 +2,10 @@
 /*
  * The transport half of the gateway: carries one MCP request to Blowhorn
  * Cloud's /mcp and the answer back, and does nothing else. The Worker and
- * Cloud's /mcp are ONE protected resource, https://mcp.blowhorn.ai/mcp. Cloud
- * owns the canonical resource, the 401 challenge, the protected resource
- * metadata, the tokens and the tools; this module never reads, mints or
- * checks a credential, and never decides what a token is audience for.
+ * Cloud's /mcp are one MCP service edge. Cloud owns the canonical resource
+ * and audience https://cloud.blowhorn.ai/mcp, the tokens and the tools; this
+ * module never reads, mints or checks a credential, and never decides what a
+ * token is audience for. RFC 9728 metadata is served by src/metadata.js.
  *
  * The rules, each held by test/proxy.test.js:
  *  - The upstream URL is the constant base (cloudBase) plus the route's own
@@ -34,9 +34,10 @@ const ALLOWED_BASES = [DEFAULT_BASE];
  * The only paths the gateway serves, each mapped to the same path on Cloud.
  * Everything else is a 404 from the Worker. `methods` are the ones carried to
  * Cloud; the Worker answers OPTIONS itself. The metadata routes are public
- * documents (RFC 9728): the Worker serves them from Cloud so a client that
- * starts at https://mcp.blowhorn.ai finds the authorization server Cloud
- * names, and invents no authorization server of its own.
+ * RFC 9728 documents answered locally by src/metadata.js (not forwarded), so
+ * a client that starts at https://mcp.blowhorn.ai learns Cloud's Blowhorn
+ * issuer and the canonical audience without depending on Cloud's tenant host
+ * strings.
  */
 export const ROUTES = Object.freeze({
   "/mcp": Object.freeze({ kind: "mcp", methods: Object.freeze(["POST", "GET", "DELETE"]) }),
@@ -46,8 +47,6 @@ export const ROUTES = Object.freeze({
 
 /** Request headers carried to Cloud on /mcp. Anything not listed is dropped. */
 export const REQUEST_HEADERS = Object.freeze(["Authorization", "Content-Type", "Accept", "Mcp-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID", "traceparent", "tracestate"]);
-/** Request headers carried to Cloud on a metadata route: public documents, so no credential. */
-export const METADATA_REQUEST_HEADERS = Object.freeze(["Accept", "traceparent", "tracestate"]);
 /** Answer headers carried back to the client. Content-Length is not: the runtime frames the streamed body. */
 export const RESPONSE_HEADERS = Object.freeze(["Content-Type", "WWW-Authenticate", "Mcp-Session-Id", "Mcp-Protocol-Version", "Allow", "Retry-After", "Cache-Control", "Link"]);
 

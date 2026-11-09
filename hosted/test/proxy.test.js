@@ -9,7 +9,7 @@ import test from "node:test";
 import assert from "node:assert";
 import worker from "../src/index.js";
 import { CODES } from "../src/errors.js";
-import { MAX_REQUEST_BYTES, METADATA_REQUEST_HEADERS, REQUEST_HEADERS, RESPONSE_HEADERS, TIMEOUT_MS, USER_AGENT } from "../src/proxy.js";
+import { MAX_REQUEST_BYTES, REQUEST_HEADERS, RESPONSE_HEADERS, TIMEOUT_MS, USER_AGENT } from "../src/proxy.js";
 import { ACCEPT, CLOUD, ENV, INIT, ISSUER, MCP, PRM, PRM_PATH, fakeCloud, mockFetch, plainHeaders } from "./support/harness.js";
 
 const TOKEN = "proxy-test-token-0123456789";
@@ -42,7 +42,7 @@ function sent(call) {
   return plainHeaders(call.init.headers);
 }
 
-test("an unauthenticated POST gets Cloud's 401 challenge and body back verbatim; the Worker answers none of it", async (t) => {
+test("an unauthenticated POST gets Cloud's 401 body back; the Worker rewrites resource_metadata to the public PRM", async (t) => {
   const cloud = fakeCloud();
   const calls = mockFetch(t, (url, init) => cloud.handle(url, init));
   const res = await worker.fetch(post(initialize), ENV, {});
@@ -52,11 +52,11 @@ test("an unauthenticated POST gets Cloud's 401 challenge and body back verbatim;
   assert.deepStrictEqual(await res.json(), { error: "unauthorized" });
   assert.deepStrictEqual(calls.map((c) => [c.init.method, c.url]), [["POST", `${CLOUD}/mcp`]]);
   assert.strictEqual(sent(calls[0]).authorization, undefined);
-  // The challenge is Cloud's text, so it is never the old Worker-written realm.
+  // resource_metadata names the Worker public PRM, even when Cloud named another host.
   assert.ok(!res.headers.get("WWW-Authenticate").includes("blowhorn-mcp"));
 });
 
-test("a presented but invalid token gets Cloud's invalid_token challenge, byte for byte", async (t) => {
+test("a presented but invalid token gets Cloud's invalid_token challenge with the public resource_metadata", async (t) => {
   const cloud = fakeCloud();
   mockFetch(t, (url, init) => cloud.handle(url, init));
   const res = await worker.fetch(post(initialize, auth), ENV, {});
@@ -86,27 +86,24 @@ test("GET and DELETE /mcp go to Cloud, and Cloud's answer (a 405 and its Allow, 
   assert.ok(calls.every((c) => c.url === `${CLOUD}/mcp`));
 });
 
-test("both protected resource metadata paths are Cloud's documents, carried unchanged and without any credential", async (t) => {
-  const cloud = fakeCloud();
-  const calls = mockFetch(t, (url, init) => cloud.handle(url, init));
+test("both protected resource metadata paths are answered locally with the public resource and Cloud issuer", async (t) => {
+  const calls = mockFetch(t, () => assert.fail("metadata must not call Cloud"));
   for (const path of [PRM_PATH, "/.well-known/oauth-protected-resource"]) {
     const res = await worker.fetch(new Request(`https://mcp.blowhorn.ai${path}`, { headers: { ...auth, Cookie: "sid=1", Accept: "application/json" } }), ENV, {});
     assert.strictEqual(res.status, 200, path);
-    assert.deepStrictEqual(await res.json(), { resource: MCP, authorization_servers: [ISSUER], bearer_methods_supported: ["header"] });
+    assert.deepStrictEqual(await res.json(), {
+      resource: MCP,
+      authorization_servers: [ISSUER],
+      bearer_methods_supported: ["header"],
+      resource_name: "Blowhorn MCP",
+    });
     assert.match(res.headers.get("Content-Type"), /^application\/json/);
     assert.strictEqual(res.headers.get("Cache-Control"), "public, max-age=300");
     const head = await worker.fetch(new Request(`https://mcp.blowhorn.ai${path}`, { method: "HEAD" }), ENV, {});
     assert.strictEqual(head.status, 200);
     assert.strictEqual(await head.text(), "");
   }
-  assert.deepStrictEqual(calls.map((c) => c.url), [PRM_PATH, PRM_PATH, "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource"].map((p) => `${CLOUD}${p}`));
-  assert.deepStrictEqual(calls.map((c) => c.init.method), ["GET", "HEAD", "GET", "HEAD"]);
-  for (const c of calls) {
-    const allowedNames = [...METADATA_REQUEST_HEADERS.map((h) => h.toLowerCase()), "user-agent"];
-    assert.ok(Object.keys(sent(c)).every((k) => allowedNames.includes(k)), Object.keys(sent(c)).join(","));
-    assert.strictEqual(sent(c).authorization, undefined, "no credential goes to a public document");
-    assert.strictEqual(sent(c).cookie, undefined);
-  }
+  assert.deepStrictEqual(calls, []);
 });
 
 test("only the allowlisted headers go to Cloud on /mcp, unchanged; no cookie, forwarded host, client identity or Origin", async (t) => {
@@ -172,7 +169,7 @@ test("the upstream URL is the constant Cloud URL: never the inbound host, path s
   assert.strictEqual((await worker.fetch(req, ENV, {})).status, 200);
   const meta = await worker.fetch(new Request(`https://evil.example${PRM_PATH}?resource=https://evil.example`, { headers: { Host: "evil.example" } }), ENV, {});
   assert.strictEqual(meta.status, 200);
-  assert.deepStrictEqual(calls.map((c) => c.url), [`${CLOUD}/mcp`, `${CLOUD}${PRM_PATH}`]);
+  assert.deepStrictEqual(calls.map((c) => c.url), [`${CLOUD}/mcp`], "metadata is local; only /mcp reached Cloud");
   assert.deepStrictEqual((await meta.json()).resource, MCP, "the metadata is the same whatever host asked");
 });
 
@@ -296,11 +293,12 @@ test("a redirect from Cloud is a 502 with blowhorn-mcp-1013; it is not followed 
     assert.ok(!JSON.stringify(body).includes("evil.example"));
     assert.strictEqual(calls.length, 1, "one request, no hop");
   }
-  const meta = mockFetch(t, () => new Response(null, { status: 302, headers: { Location: "https://evil.example/" } }));
-  const res = await worker.fetch(new Request(PRM), ENV, {});
-  assert.strictEqual(res.status, 502);
-  assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), "*");
-  assert.strictEqual(meta.length, 1);
+  // Metadata is answered locally, so a Cloud redirect cannot affect PRM.
+  const metaCalls = mockFetch(t, () => assert.fail("PRM must not call Cloud"));
+  const meta = await worker.fetch(new Request(PRM), ENV, {});
+  assert.strictEqual(meta.status, 200);
+  assert.strictEqual(meta.headers.get("Access-Control-Allow-Origin"), "*");
+  assert.deepStrictEqual(metaCalls, []);
 });
 
 test("Cloud unreachable is a 502 with blowhorn-mcp-1011 and a log line that names only the error type", async (t) => {

@@ -18,6 +18,8 @@ import { RATE_LIMITER_BINDING } from "../../src/ratelimit.js";
 export const MCP = "https://mcp.blowhorn.ai/mcp";
 export const MCP_ORIGIN = "https://mcp.blowhorn.ai";
 export const CLOUD = "https://cloud.blowhorn.ai";
+/** Protected resource URI / token audience for clients of this Worker (MCP SDK match). */
+export const CANONICAL_RESOURCE = MCP;
 export const ISSUER = `${CLOUD}/hydra`;
 export const PRM_PATH = "/.well-known/oauth-protected-resource/mcp";
 export const PRM = `${MCP_ORIGIN}${PRM_PATH}`;
@@ -97,7 +99,8 @@ export function fakeCloud({ legacyTokens = [], leaky = false, sse = false } = {}
     });
 
   function challenge(presented) {
-    const params = [`resource_metadata="${PRM}"`];
+    // Deliberately name another host: the Worker must rewrite resource_metadata to PRM.
+    const params = ['resource_metadata="https://cloud.layer5.io/.well-known/oauth-protected-resource/mcp"'];
     if (presented) params.unshift('error="invalid_token"');
     return json(401, { error: presented ? "invalid_token" : "unauthorized" }, { "WWW-Authenticate": `Bearer ${params.join(", ")}` });
   }
@@ -121,7 +124,7 @@ export function fakeCloud({ legacyTokens = [], leaky = false, sse = false } = {}
     const auth = headers.authorization;
     const token = /^Bearer (\S+)$/i.exec(auth ?? "")?.[1];
     const grant = token ? tokens.get(token) : undefined;
-    const ok = token && (legacyTokens.includes(token) || grant?.resource === MCP);
+    const ok = token && (legacyTokens.includes(token) || grant?.resource === CANONICAL_RESOURCE);
     if (!ok) return challenge(auth !== undefined);
     if (req.method === "GET") {
       if (!sse) return new Response(null, { status: 405, headers: { Allow: "POST" } });
@@ -160,7 +163,7 @@ export function fakeCloud({ legacyTokens = [], leaky = false, sse = false } = {}
     if (url.pathname === "/mcp") return mcp(req, headers);
 
     if (url.pathname === PRM_PATH || url.pathname === "/.well-known/oauth-protected-resource") {
-      return json(200, { resource: MCP, authorization_servers: [ISSUER], bearer_methods_supported: ["header"] }, { "Cache-Control": "public, max-age=300" });
+      return json(200, { resource: CANONICAL_RESOURCE, authorization_servers: [ISSUER], bearer_methods_supported: ["header"] }, { "Cache-Control": "public, max-age=300" });
     }
     if (url.pathname === "/.well-known/oauth-authorization-server/hydra") {
       return json(200, {
@@ -188,7 +191,7 @@ export function fakeCloud({ legacyTokens = [], leaky = false, sse = false } = {}
       else if (!client.redirect_uris.includes(q.get("redirect_uri"))) problems.push("redirect_uri not registered");
       if (q.get("response_type") !== "code") problems.push("response_type");
       if (q.get("code_challenge_method") !== "S256" || !q.get("code_challenge")) problems.push("S256 challenge missing");
-      if (q.getAll("resource").length !== 1 || q.get("resource") !== MCP) problems.push("resource is not exactly the canonical resource");
+      if (q.getAll("resource").length !== 1 || q.get("resource") !== CANONICAL_RESOURCE) problems.push("resource is not exactly the canonical resource");
       if (problems.length) return json(400, { error: "invalid_request", error_description: problems.join("; ") });
       const code = randomUUID();
       codes.set(code, { client_id: q.get("client_id"), redirect_uri: q.get("redirect_uri"), challenge: q.get("code_challenge"), resource: q.get("resource") });
@@ -205,7 +208,7 @@ export function fakeCloud({ legacyTokens = [], leaky = false, sse = false } = {}
       codes.delete(form.get("code"));
       if (grant.client_id !== form.get("client_id") || grant.redirect_uri !== form.get("redirect_uri")) return fail("invalid_grant");
       if (b64url(createHash("sha256").update(form.get("code_verifier") ?? "").digest()) !== grant.challenge) return fail("invalid_grant");
-      if (form.get("resource") !== MCP || grant.resource !== MCP) return fail("invalid_target");
+      if (form.get("resource") !== CANONICAL_RESOURCE || grant.resource !== CANONICAL_RESOURCE) return fail("invalid_target");
       const access_token = `mcp-opaque-${randomUUID()}`;
       tokens.set(access_token, { resource: grant.resource, client_id: grant.client_id });
       return json(200, { access_token, token_type: "Bearer", expires_in: 3600 });

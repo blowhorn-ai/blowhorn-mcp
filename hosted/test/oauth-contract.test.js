@@ -4,12 +4,12 @@
  * NOT Blowhorn Cloud, NOT Gemini CLI, and NOT an end-to-end test of anything
  * deployed.
  *
- * What it proves: the Worker, as the front door of the one protected resource
- * https://mcp.blowhorn.ai/mcp, carries Cloud's challenge and protected
- * resource metadata so that the official MCP SDK client (the OAuth client in
- * @modelcontextprotocol/sdk, the same logic MCP clients are built on) can
- * discover Cloud's authorization server, register, run the authorization code
- * flow with S256 and the canonical `resource`, and then initialize, list
+ * What it proves: the Worker, as the public edge at https://mcp.blowhorn.ai/mcp,
+ * rewrites Cloud's 401 challenge and serves RFC 9728 metadata naming Cloud's
+ * Blowhorn issuer and canonical audience, so that the official MCP SDK client
+ * (the OAuth client in @modelcontextprotocol/sdk) can discover Cloud's
+ * authorization server, register, run the authorization code flow with S256
+ * and the canonical `resource`, and then initialize, list
  * tools and call a tool through the Worker with the token it got.
  *
  * What it does not prove: that Cloud (PR 6424 or anything else) really
@@ -25,7 +25,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import worker from "../src/index.js";
-import { ACCEPT, CLOUD, ENV, INIT, ISSUER, MCP, MCP_ORIGIN, PRM, PRM_PATH, fakeCloud, mockFetch } from "./support/harness.js";
+import { ACCEPT, CANONICAL_RESOURCE, CLOUD, ENV, INIT, ISSUER, MCP, MCP_ORIGIN, PRM, PRM_PATH, fakeCloud, mockFetch } from "./support/harness.js";
 
 const REDIRECT = "http://127.0.0.1:8976/oauth/callback";
 
@@ -82,23 +82,22 @@ test("official SDK: 401, discovery through the Worker, registration, code S256 w
   const { cloud, viaWorker, fetchFn } = setup(t);
   const p = provider();
 
-  // 1. No token: the SDK is turned away, and told by Cloud (relayed) where to look.
+  // 1. No token: the SDK is turned away; the Worker rewrites the challenge and serves metadata itself.
   const first = new Client({ name: "sdk-contract-test", version: "1" });
   const transport = new StreamableHTTPClientTransport(new URL(MCP), { authProvider: p, fetch: fetchFn });
   await assert.rejects(first.connect(transport), UnauthorizedError);
 
-  // The Worker carried only /mcp and the protected resource metadata. Every other step went to Cloud direct:
-  // the Worker has no authorization server, and the SDK was never pointed at it.
+  // The Worker answered /mcp (proxy) and PRM (local). Discovery and registration go to Cloud's issuer direct.
   assert.deepStrictEqual(viaWorker, ["POST /mcp", `GET ${PRM_PATH}`]);
-  const urls = cloud.seen.map((s) => s.url);
-  assert.deepStrictEqual(urls.slice(0, 2), [`${CLOUD}/mcp`, `${CLOUD}${PRM_PATH}`], "the 401 and the metadata both came from Cloud");
-  assert.ok(urls.includes(`${CLOUD}/.well-known/oauth-authorization-server/hydra`), "the SDK followed the issuer in Cloud's metadata");
-  assert.ok(urls.includes(`${ISSUER}/oauth2/register`), "and registered there");
+  assert.ok(!cloud.seen.some((s) => s.url.includes("/.well-known/oauth-protected-resource")), "PRM was not fetched from Cloud");
+  assert.ok(cloud.seen.some((s) => s.url === `${CLOUD}/mcp`), "the 401 came from Cloud's /mcp");
+  assert.ok(cloud.seen.some((s) => s.url === `${CLOUD}/.well-known/oauth-authorization-server/hydra` || s.url.startsWith(`${ISSUER}/`)), "the SDK followed the issuer in the Worker's metadata");
+  assert.ok(cloud.seen.some((s) => s.url === `${ISSUER}/oauth2/register`), "and registered there");
   assert.ok(cloud.seen.filter((s) => s.url.startsWith(CLOUD) && s.url !== `${CLOUD}/mcp` && !s.url.includes("/.well-known/oauth-protected-resource")).every((s) => !s.headers.authorization));
   assert.strictEqual(cloud.clients.size, 1);
   assert.deepStrictEqual(cloud.clients.get("client-1").redirect_uris, [REDIRECT]);
 
-  // 2. The authorization request: Cloud's issuer, PKCE S256, and the canonical resource byte for byte.
+  // 2. The authorization request: Cloud's issuer, PKCE S256, and the canonical Cloud resource byte for byte.
   const authUrl = p.mem.authorizationUrl;
   assert.ok(authUrl, "the SDK asked for the user's browser");
   assert.strictEqual(`${authUrl.origin}${authUrl.pathname}`, `${ISSUER}/oauth2/auth`);
@@ -106,7 +105,7 @@ test("official SDK: 401, discovery through the Worker, registration, code S256 w
   assert.strictEqual(authUrl.searchParams.get("code_challenge_method"), "S256");
   assert.strictEqual(authUrl.searchParams.get("client_id"), "client-1");
   assert.strictEqual(authUrl.searchParams.get("redirect_uri"), REDIRECT);
-  assert.deepStrictEqual(authUrl.searchParams.getAll("resource"), [MCP]);
+  assert.deepStrictEqual(authUrl.searchParams.getAll("resource"), [CANONICAL_RESOURCE]);
 
   // 3. The "browser": the fake authorization server approves and redirects back with a code.
   const approved = await cloud.handle(new Request(authUrl, { redirect: "manual" }));
@@ -120,7 +119,7 @@ test("official SDK: 401, discovery through the Worker, registration, code S256 w
   await transport.finishAuth(code);
   const token = p.mem.tokens?.access_token;
   assert.match(token, /^mcp-opaque-/);
-  assert.deepStrictEqual(cloud.tokens.get(token), { resource: MCP, client_id: "client-1" }, "the token is bound to the canonical resource");
+  assert.deepStrictEqual(cloud.tokens.get(token), { resource: CANONICAL_RESOURCE, client_id: "client-1" }, "the token is bound to the canonical resource");
 
   // 5. A fresh connection with that token: initialize, tools/list, tools/call, all through the Worker.
   const client = new Client({ name: "sdk-contract-test", version: "1" });
@@ -183,9 +182,11 @@ test("the fake authorization server is strict, so a Worker that dropped the reso
   const registered = await cloud.handle(new Request(`${ISSUER}/oauth2/register`, { method: "POST", body: JSON.stringify({ redirect_uris: [REDIRECT] }) }));
   const { client_id } = await registered.json();
   const ask = (params) => cloud.handle(new Request(`${ISSUER}/oauth2/auth?${new URLSearchParams({ client_id, redirect_uri: REDIRECT, response_type: "code", code_challenge_method: "S256", code_challenge: "abc", ...params })}`, { redirect: "manual" }));
-  assert.strictEqual((await ask({ resource: MCP })).status, 302);
+  assert.strictEqual((await ask({ resource: CANONICAL_RESOURCE })).status, 302);
   assert.strictEqual((await ask({})).status, 400, "no resource");
-  assert.strictEqual((await ask({ resource: `${MCP}/` })).status, 400, "trailing slash is not the same resource");
-  assert.strictEqual((await ask({ resource: MCP_ORIGIN })).status, 400, "the origin is not the resource");
-  assert.strictEqual((await ask({ resource: MCP, code_challenge_method: "plain" })).status, 400, "plain PKCE");
+  assert.strictEqual((await ask({ resource: `${CANONICAL_RESOURCE}/` })).status, 400, "trailing slash is not the same resource");
+  assert.strictEqual((await ask({ resource: `${CLOUD}/mcp` })).status, 400, "Cloud's deployment URL is not this Worker's public resource");
+  assert.strictEqual((await ask({ resource: CLOUD })).status, 400, "the Cloud origin is not the resource");
+  assert.strictEqual((await ask({ resource: MCP_ORIGIN })).status, 400, "the origin alone is not the resource");
+  assert.strictEqual((await ask({ resource: CANONICAL_RESOURCE, code_challenge_method: "plain" })).status, 400, "plain PKCE");
 });

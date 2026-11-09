@@ -4,14 +4,15 @@
  * https://mcp.blowhorn.ai/mcp until Blowhorn Cloud answers on that origin
  * itself (blowhorn-ai/blowhorn#1509, U3). Retire this Worker then.
  *
- * The Worker and Cloud's /mcp are ONE protected resource. This Worker is not
- * an MCP server, not an OAuth authorization server, and not a token gateway:
- * it carries each MCP request to https://cloud.blowhorn.ai/mcp and the answer
- * back, byte for byte (src/proxy.js). Cloud owns the canonical resource, the
- * 401 challenge and its resource_metadata, the protected resource metadata,
- * token validation and the tools. A client that starts here follows Cloud's
- * own challenge and metadata to Cloud's authorization server and registers
- * and signs in there; nothing in this file knows what a valid token is.
+ * This Worker is not an MCP server, not an OAuth authorization server, and
+ * not a token gateway: it carries each MCP request to
+ * https://cloud.blowhorn.ai/mcp and the answer back, byte for byte
+ * (src/proxy.js). Cloud owns the canonical resource and audience
+ * (https://cloud.blowhorn.ai/mcp), token validation and the tools. The Worker
+ * serves RFC 9728 metadata locally (src/metadata.js) pointing at Cloud's
+ * Blowhorn issuer, and rewrites Cloud's 401 WWW-Authenticate so
+ * resource_metadata names this origin. Nothing here knows what a valid token
+ * is.
  *
  * What the Worker itself keeps, because it is the only browser-facing edge
  * and the only flood control in front of Cloud:
@@ -22,7 +23,8 @@
  *  - a 1 MB request body bound and one JSON-RPC message per POST.
  */
 import { bearerToken } from "./auth.js";
-import { BodyTimeoutError, MAX_REQUEST_BYTES, METADATA_REQUEST_HEADERS, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
+import { protectedResourceMetadata, publicChallenge } from "./metadata.js";
+import { BodyTimeoutError, MAX_REQUEST_BYTES, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
 import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } from "./ratelimit.js";
 
 // Workers treat every named export of the main module as an entrypoint.
@@ -80,6 +82,10 @@ async function carry({ base, path, request, headers, body, cors, route }) {
     return failureResponse(result.failure, cors);
   }
   const out = returnHeaders(result.response.headers);
+  // Point clients at this origin's RFC 9728 document, not Cloud's tenant host string.
+  if (route.kind === "mcp" && result.response.status === 401) {
+    out.set("WWW-Authenticate", publicChallenge(result.response.headers.get("WWW-Authenticate")));
+  }
   for (const [k, v] of Object.entries(cors)) out.set(k, v);
   return new Response(request.method === "HEAD" ? null : result.response.body, { status: result.response.status, headers: out });
 }
@@ -150,7 +156,7 @@ async function mcp(request, env, origin) {
   return carry({ base, path: "/mcp", request, headers: forwardHeaders(request.headers, REQUEST_HEADERS), body, cors, route: ROUTES["/mcp"] });
 }
 
-/** A public metadata document: Cloud's, carried unchanged, readable by any origin. */
+/** A public RFC 9728 document answered here (not forwarded to Cloud), readable by any origin. */
 async function metadata(request, env, path) {
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -158,7 +164,7 @@ async function metadata(request, env, path) {
       headers: { ...METADATA_CORS, "Access-Control-Allow-Methods": "GET, HEAD", "Access-Control-Allow-Headers": "Accept", "Access-Control-Max-Age": "600" },
     });
   }
-  // The same flood control as /mcp: an unauthenticated read that reaches Cloud counts for its address.
+  // Same flood control as /mcp: an unauthenticated read still spends the address limit.
   const addressLimit = await refuses(env, "address", addressKey(request.headers.get("CF-Connecting-IP")));
   if (addressLimit.unavailable) return unavailable(METADATA_CORS);
   if (addressLimit.refused) {
@@ -168,9 +174,14 @@ async function metadata(request, env, path) {
   if (!ROUTES[path].methods.includes(request.method)) {
     return rpcError(405, -32000, "Method not allowed.", { Allow: METADATA_METHODS, ...METADATA_CORS });
   }
-  const base = cloudBase(env);
-  if (!base) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", METADATA_CORS);
-  return carry({ base, path, request, headers: forwardHeaders(request.headers, METADATA_REQUEST_HEADERS), cors: METADATA_CORS, route: ROUTES[path] });
+  if (!cloudBase(env)) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", METADATA_CORS);
+  const headers = {
+    "Content-Type": "application/json",
+    "Cache-Control": "public, max-age=300",
+    ...METADATA_CORS,
+  };
+  if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+  return new Response(JSON.stringify(protectedResourceMetadata()), { status: 200, headers });
 }
 
 export default {
