@@ -7,13 +7,13 @@ When that ships, this Worker is retired. It is not the Blowhorn MCP server
 from the desktop app, which runs locally on your Mac and is what the rest of
 this repo is about.
 
-> **Status of this change: not deployed.** Version 0.2.0 replaces the 0.1.x
-> gateway, which ran four read-only tools itself. Deploying it is a cutover
-> with a precondition: Blowhorn Cloud's `/mcp` must already serve the whole
-> MCP protocol, including legacy Cloud API tokens. See
-> [Before cutover](#before-cutover). Nothing here has been deployed, and
-> nothing here is tested against a real Hydra, Kratos, Cloud or Gemini CLI;
-> see [Tests](#tests).
+> **Status: deployed.** Version 0.2.0 is live at `https://mcp.blowhorn.ai`
+> (merged in blowhorn-mcp#30). It is a transport proxy for Cloud's `/mcp`,
+> and serves RFC 9728 protected-resource metadata locally. End-to-end MCP
+> OAuth client sign-in is still gated on Cloud enabling dynamic client
+> registration (`POST /oauth2/register` returns 403 until then). Bearer
+> Cloud API tokens keep working. See [Before cutover](#before-cutover) and
+> [Tests](#tests).
 
 ## What it does
 
