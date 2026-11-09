@@ -1,7 +1,7 @@
 {
   "name": "blowhorn",
   "description": "Social media and marketing management from your AI agent: plan, draft, schedule, publish and track posts, replies and reposts on LinkedIn, X, Reddit, Hacker News, Bluesky and Slack; amplify on GitHub. Use the read-only hosted MCP or local macOS server; every change is a dry run until you confirm it.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": {
     "name": "Blowhorn"
   },

@@ -5,6 +5,8 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+## 1.0.2
+
 - Round-2 listing copy names social media management and the supported platforms (#5).
 - `server.json` gains a `remotes` entry for the hosted server (`https://mcp.blowhorn.ai/mcp`), generated from `listing.remotes`.
 - Copy rules now allow naming the hosted server and OAuth; Cloud's origin hostname stays confined to `hosted/`.
