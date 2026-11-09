@@ -10,12 +10,6 @@ launcher's, which every listing file follows.
   front and center (#5). Copy rules now allow naming the hosted server and
   OAuth outside `hosted/`, since mcp.blowhorn.ai is live.
 
-## 1.0.1
-
-- Hosted Worker cutover: RFC 9728 discovery on mcp.blowhorn.ai and proxy to
-  Cloud /mcp (#30). End-to-end OAuth clients were still gated on Cloud enabling
-  dynamic client registration at the time of this cut.
-
 ## 1.0.0
 
 - First stable release. The version jumps from 0.1.4 to 1.0.0; there are no
