@@ -1,18 +1,35 @@
 {
   "$schema": "../schemas/listing.schema.json",
   "slug": "blowhorn",
-  "title": "Blowhorn",
-  "registryDescription": "Blowhorn's local MCP server on your Mac: your Blowhorn commands as tools, dry run first.",
-  "shortDescription": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
-  "longDescription": "Blowhorn is an AI-native social media manager. Its MCP server ships inside the Blowhorn desktop app and runs locally on your Mac over stdio, with one tool per Blowhorn command, grouped Act, Manage, Connect, Run, Observe and Meta. Risky tools that remove or replace your install, remove a background service or sign you out are hidden by default from Blowhorn 1.62.0 (uninstall, service_uninstall, auth_logout, desktop_build and desktop_install, and after 1.84.0 also service_adopt and chrome_attach_chrome_uninstall_agent); serve one by naming it with --allow-hidden-tool or in BLOWHORN_MCP_ALLOW_HIDDEN_TOOLS. Reads run as asked; every state change runs as a dry run unless the call confirms it, and Blowhorn's approval mode applies to agents too. Tool results never carry secrets and tool arguments are never logged. Requires macOS and Blowhorn 1.61.0 or later, opened once so it writes ~/.local/bin/blowhorn-mcp.",
+  "title": "Blowhorn - AI Native Social Media Management",
+  "registryDescription": "Social media and marketing management for LinkedIn, X, Reddit, Hacker News, Bluesky, Slack, GitHub",
+  "shortDescription": "Social media and marketing management from your AI agent: plan, draft, schedule, publish and track posts, replies and reposts on LinkedIn, X, Reddit, Hacker News, Bluesky and Slack; amplify on GitHub. Use the read-only hosted MCP or local macOS server; every change is a dry run until you confirm it.",
+  "longDescription": "Blowhorn is social media and marketing management for founders, DevRel and marketing teams, agencies and enterprises. Plan, draft, schedule, publish and track your posts, replies, comments and reposts on one shared calendar. Then bring your AI agent in through MCP. AI drafts, you decide.\n\nSupported platforms today:\n- LinkedIn, X, Reddit and Hacker News, through your own signed-in browser.\n- Bluesky and Slack, through each platform's API with your own token or session.\n- GitHub, for amplifying, following and starring (no publishing).\nYouTube, Instagram and Facebook are coming soon.\n\nThere are two ways to connect.\n\nHosted server: any MCP client can connect over the web at https://mcp.blowhorn.ai/mcp. You sign in with your Blowhorn account through OAuth, and clients register themselves, so there are no keys to copy. It is read-only today, with four tools: getConnections, getEvents, getContentItem and listContentItems. Use it to let an agent see your connected profiles, your activity and your content from wherever it runs.\n\nLocal server: the Blowhorn desktop app for macOS includes a local stdio MCP server. It offers one tool per Blowhorn command, in the groups Act, Manage, Connect, Run, Observe and Meta. Through it an agent can draft, queue, schedule and check activities. You stay in command:\n- Every tool that changes state runs as a dry run unless you confirm it.\n- Approval mode applies to agents, so their work waits for a person to approve it.\n- Riskier tools stay hidden until you opt in with --allow-hidden-tool.\n- Results never include secrets, and tool arguments are never logged.\nRequires Blowhorn 1.61.0 or later.\n\nNot a bot. It's you. Blowhorn acts through your own profiles, on your own computers, at a human pace and within the rules of engagement you set.",
   "keywords": [
-    "blowhorn",
+    "social-media-management",
+    "social-media-marketing",
+    "marketing-management",
+    "social-media-automation",
+    "social-media-scheduler",
+    "content-calendar",
+    "post-scheduling",
+    "devrel",
+    "developer-relations",
+    "linkedin",
+    "x",
+    "twitter",
+    "reddit",
+    "hacker-news",
+    "bluesky",
+    "slack",
+    "github",
     "mcp",
-    "model-context-protocol",
-    "social-media",
-    "scheduling",
-    "agent",
-    "macos"
+    "mcp-server",
+    "hosted-mcp",
+    "oauth",
+    "ai-agent",
+    "dry-run",
+    "approval"
   ],
   "urls": {
     "docs": "https://blowhorn.ai/docs/reference/mcp-server/",
@@ -48,5 +65,11 @@
         "${extensionPath}${/}bin${/}blowhorn-mcp.js"
       ]
     }
-  }
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.blowhorn.ai/mcp"
+    }
+  ]
 }

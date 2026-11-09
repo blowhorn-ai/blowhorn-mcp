@@ -14,7 +14,9 @@ Notes for coding agents working in this repo.
   anything but the launcher.
 - **Copy rules** (all text files except `LICENSE`, `schemas/vendor/` and
   lock files): hyphens, never em or en dashes; say "Blowhorn"; no persona
-  names. Blowhorn's MCP server runs locally on macOS only. The npm package
+  names. Blowhorn's local MCP server runs on macOS only. The hosted
+  server at mcp.blowhorn.ai may be named, OAuth included; never name Cloud's
+  origin hostname outside `hosted/`. The npm package
   and the official MCP Registry entry are published; other marketplace
   listings are future tense until they exist. The
   full list, enforced by `make check`, is `RULES` in `scripts/check.js`.

@@ -52,6 +52,7 @@ function outputs(listing, pkg) {
           transport: { type: "stdio" },
         },
       ],
+      remotes: listing.remotes,
     },
 
     // Claude Code plugin; this repo's root is the plugin root.

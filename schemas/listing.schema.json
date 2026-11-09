@@ -63,6 +63,19 @@
       },
       "required": ["claudePlugin", "cursorPlugin", "geminiExtension"],
       "additionalProperties": false
+    },
+    "remotes": {
+      "description": "Hosted MCP endpoints copied onto server.json's remotes. Shape follows the vendored RemoteTransport (streamable-http); OAuth is discovered via RFC 9728, so no headers.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "const": "streamable-http" },
+          "url": { "$ref": "#/$defs/httpsUrl" }
+        },
+        "required": ["type", "url"],
+        "additionalProperties": false
+      }
     }
   },
   "required": ["slug", "title", "registryDescription", "shortDescription", "longDescription", "keywords", "urls", "logo", "author", "maintainers", "minimumAppVersion", "commands"],

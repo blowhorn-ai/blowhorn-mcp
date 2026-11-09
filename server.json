@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.blowhorn-ai/blowhorn",
-  "title": "Blowhorn",
-  "description": "Blowhorn's local MCP server on your Mac: your Blowhorn commands as tools, dry run first.",
+  "title": "Blowhorn - AI Native Social Media Management",
+  "description": "Social media and marketing management for LinkedIn, X, Reddit, Hacker News, Bluesky, Slack, GitHub",
   "repository": {
     "url": "https://github.com/blowhorn-ai/blowhorn-mcp",
     "source": "github"
@@ -19,6 +19,12 @@
       "transport": {
         "type": "stdio"
       }
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.blowhorn.ai/mcp"
     }
   ]
 }

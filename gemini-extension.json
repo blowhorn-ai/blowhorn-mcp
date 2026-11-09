@@ -1,7 +1,7 @@
 {
   "name": "blowhorn",
   "version": "1.0.1",
-  "description": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
+  "description": "Social media and marketing management from your AI agent: plan, draft, schedule, publish and track posts, replies and reposts on LinkedIn, X, Reddit, Hacker News, Bluesky and Slack; amplify on GitHub. Use the read-only hosted MCP or local macOS server; every change is a dry run until you confirm it.",
   "mcpServers": {
     "blowhorn": {
       "command": "node",

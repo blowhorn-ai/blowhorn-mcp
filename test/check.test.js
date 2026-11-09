@@ -30,17 +30,17 @@ test("packFiles reads npm pack --json output from npm 10 and 11 (an array) and n
 test("copy rules catch what they forbid and pass plain copy", () => {
   assert.ok(broken(`a ${String.fromCharCode(0x2014)} b`).length);
   assert.ok(broken(`a ${String.fromCharCode(0x2013)} b`).length);
-  for (const line of ["Try our hosted server", "Sign in with OAuth", "Works on Windows", "See pricing", "Blowhorn is listed on Glama"]) {
+  for (const line of ["Calls https://cloud.blowhorn.ai", "Works on Windows", "See pricing", "Blowhorn is listed on Glama"]) {
     assert.ok(broken(line).length, line);
   }
-  for (const line of ["Blowhorn runs locally on your Mac over stdio.", "blowhorn-mcp is published on npm: npx -y blowhorn-mcp", "Published in the MCP Registry as io.github.blowhorn-ai/blowhorn", "runs-on: ubuntu-latest"]) {
+  for (const line of ["Blowhorn runs locally on your Mac over stdio.", "Connect to the hosted server at https://mcp.blowhorn.ai/mcp", "Sign in with OAuth", "blowhorn-mcp is published on npm: npx -y blowhorn-mcp", "Published in the MCP Registry as io.github.blowhorn-ai/blowhorn", "runs-on: ubuntu-latest"]) {
     assert.deepStrictEqual(broken(line), [], line);
   }
 });
 
-test("hosted/ is exempt only from the Cloud, hosted server and OAuth rules", () => {
+test("hosted/ is exempt only from the Cloud origin hostname rule", () => {
   const brokenIn = (file, line) => rulesFor(file).filter(([, re]) => re.test(line)).map(([rule]) => rule);
-  for (const line of ["Try our hosted server", "Sign in with OAuth", "Calls https://cloud.blowhorn.ai"]) {
+  for (const line of ["Calls https://cloud.blowhorn.ai"]) {
     assert.ok(brokenIn("README.md", line).length, line);
     assert.deepStrictEqual(brokenIn("hosted/README.md", line), [], line);
   }
