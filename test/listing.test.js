@@ -59,6 +59,16 @@ test("server.json: name, version and its one npm package follow package.json", (
   assert.deepStrictEqual(npm.transport, { type: "stdio" });
 });
 
+test("server.json: title and remotes come from the listing, and remotes validate", () => {
+  const server = read("server.json");
+  assert.strictEqual(server.title, LISTING.title);
+  assert.deepStrictEqual(server.remotes, LISTING.remotes);
+  assert.deepStrictEqual(server.remotes, [{ type: "streamable-http", url: "https://mcp.blowhorn.ai/mcp" }]);
+  assert.deepStrictEqual(validateDoc(server, "server.json"), []);
+  const bad = validateDoc({ ...server, remotes: [{ type: "streamable-http" }] }, "server.json");
+  assert.ok(bad.length, "a remote without a url must fail");
+});
+
 test("every manifest's version equals the package version", () => {
   for (const file of MANIFESTS) {
     const doc = read(file);

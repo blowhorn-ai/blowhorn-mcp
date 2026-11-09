@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "blowhorn",
   "version": "1.0.1",
-  "description": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
+  "description": "Social media and marketing management from your AI agent: plan, draft, schedule, publish and track posts, replies and reposts on LinkedIn, X, Reddit, Hacker News, Bluesky and Slack; amplify on GitHub. Use the read-only hosted MCP or local macOS server; every change is a dry run until you confirm it.",
   "author": {
     "name": "Blowhorn",
     "url": "https://blowhorn.ai/"
@@ -11,12 +11,29 @@
   "repository": "https://github.com/blowhorn-ai/blowhorn-mcp",
   "license": "Apache-2.0",
   "keywords": [
-    "blowhorn",
+    "social-media-management",
+    "social-media-marketing",
+    "marketing-management",
+    "social-media-automation",
+    "social-media-scheduler",
+    "content-calendar",
+    "post-scheduling",
+    "devrel",
+    "developer-relations",
+    "linkedin",
+    "x",
+    "twitter",
+    "reddit",
+    "hacker-news",
+    "bluesky",
+    "slack",
+    "github",
     "mcp",
-    "model-context-protocol",
-    "social-media",
-    "scheduling",
-    "agent",
-    "macos"
+    "mcp-server",
+    "hosted-mcp",
+    "oauth",
+    "ai-agent",
+    "dry-run",
+    "approval"
   ]
 }
