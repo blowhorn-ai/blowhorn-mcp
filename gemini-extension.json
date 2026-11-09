@@ -1,7 +1,7 @@
 {
   "name": "blowhorn",
   "version": "1.0.1",
-  "description": "Draft, queue and check social posts from your AI agent with Blowhorn's local MCP server on your Mac. Every state change is a dry run unless you confirm it.",
+  "description": "Blowhorn isn't a bot. It's you, with your AI agent helping. Connect any MCP client to the hosted server at mcp.blowhorn.ai to read your connections, activity and content, or use the local server in the macOS desktop app, where AI drafts and you decide: every change is a dry run until you confirm it.",
   "mcpServers": {
     "blowhorn": {
       "command": "node",

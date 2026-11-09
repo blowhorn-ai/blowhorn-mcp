@@ -14,10 +14,12 @@ Notes for coding agents working in this repo.
   anything but the launcher.
 - **Copy rules** (all text files except `LICENSE`, `schemas/vendor/` and
   lock files): hyphens, never em or en dashes; say "Blowhorn"; no persona
-  names. Blowhorn's MCP server runs locally on macOS only. The npm package
-  and the official MCP Registry entry are published; other marketplace
-  listings are future tense until they exist. The
-  full list, enforced by `make check`, is `RULES` in `scripts/check.js`.
+  names. The local MCP server is macOS only; the hosted server at
+  mcp.blowhorn.ai is live and may be named (including OAuth). Listing copy
+  must not name Cloud's origin hostname (only `hosted/` may). The npm
+  package and the official MCP Registry entry are published; other
+  marketplace listings are future tense until they exist. The full list,
+  enforced by `make check`, is `RULES` in `scripts/check.js`.
 - **`lib/launcher-common.js` is a stable API** shared with the private
   repo's blowhorn-axi launcher through a submodule. Add, never change.
 - **`schemas/vendor/`** stays byte for byte; refresh it only with

@@ -30,18 +30,28 @@ test("packFiles reads npm pack --json output from npm 10 and 11 (an array) and n
 test("copy rules catch what they forbid and pass plain copy", () => {
   assert.ok(broken(`a ${String.fromCharCode(0x2014)} b`).length);
   assert.ok(broken(`a ${String.fromCharCode(0x2013)} b`).length);
-  for (const line of ["Try our hosted server", "Sign in with OAuth", "Works on Windows", "See pricing", "Blowhorn is listed on Glama"]) {
+  for (const line of ["Works on Windows", "See pricing", "Blowhorn is listed on Glama", "Calls https://cloud.blowhorn.ai"]) {
     assert.ok(broken(line).length, line);
   }
-  for (const line of ["Blowhorn runs locally on your Mac over stdio.", "blowhorn-mcp is published on npm: npx -y blowhorn-mcp", "Published in the MCP Registry as io.github.blowhorn-ai/blowhorn", "runs-on: ubuntu-latest"]) {
+  for (const line of [
+    "Blowhorn runs locally on your Mac over stdio.",
+    "blowhorn-mcp is published on npm: npx -y blowhorn-mcp",
+    "Published in the MCP Registry as io.github.blowhorn-ai/blowhorn",
+    "runs-on: ubuntu-latest",
+    "Try our hosted server",
+    "Sign in with OAuth",
+    "Read-only hosted MCP at mcp.blowhorn.ai",
+  ]) {
     assert.deepStrictEqual(broken(line), [], line);
   }
 });
 
-test("hosted/ is exempt only from the Cloud, hosted server and OAuth rules", () => {
+test("hosted/ is exempt only from the cloud.blowhorn.ai rule", () => {
   const brokenIn = (file, line) => rulesFor(file).filter(([, re]) => re.test(line)).map(([rule]) => rule);
-  for (const line of ["Try our hosted server", "Sign in with OAuth", "Calls https://cloud.blowhorn.ai"]) {
-    assert.ok(brokenIn("README.md", line).length, line);
+  assert.ok(brokenIn("README.md", "Calls https://cloud.blowhorn.ai").length);
+  assert.deepStrictEqual(brokenIn("hosted/README.md", "Calls https://cloud.blowhorn.ai"), []);
+  for (const line of ["Try our hosted server", "Sign in with OAuth"]) {
+    assert.deepStrictEqual(brokenIn("README.md", line), [], line);
     assert.deepStrictEqual(brokenIn("hosted/README.md", line), [], line);
   }
   for (const line of [`a ${String.fromCharCode(0x2014)} b`, "Layer5 Cloud", "Ask Casey", "Works on Linux", "Runs on Windows", "See pricing", "Blowhorn is listed on Glama"]) {

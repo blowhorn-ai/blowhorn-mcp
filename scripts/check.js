@@ -56,23 +56,20 @@ const RULES = [
   ["never \"Layer5 Cloud\"", /Layer5 Cloud/i],
   ["no persona names", /\b(Alex|Casey|Riley|Jordan|Sam)\b/],
   ["no cloud.blowhorn.ai: the server runs locally", /cloud\.blowhorn\.ai/i],
-  ["no hosted or remote server claims", /\b(hosted|remote|cloud)[- ](MCP )?(server|endpoint|version)\b/i],
-  ["no OAuth claims", /\bOAuth\b/i],
   ["no Windows or Linux support claims: macOS only", /\b(Windows|Linux)\b/],
   ["no pricing", /\b(pricing|price[sd]?|per month|free trial|subscription)\b/i],
   ["no claims of existing marketplace listings", /\b(available|listed|published|find (us|it|Blowhorn)) (on|in) (the )?(Glama|Smithery|PulseMCP|mcp\.so|Cline (MCP )?Marketplace|Cursor (Plugin )?(Marketplace|Directory)|Gemini (CLI )?Extensions? Gallery)\b/i],
 ];
 
 /**
- * hosted/ is the one place that describes the interim gateway, a Cloud
- * service, so it is exempt from the rules that forbid naming Cloud, a hosted
- * server and OAuth. Every other rule still holds there, macOS only included:
+ * hosted/ is the one place that describes the interim gateway and may name
+ * cloud.blowhorn.ai. Every other rule still holds there, macOS only included:
  * hosted/ docs may not claim the local server runs on Windows or Linux.
+ * Hosted-server and OAuth wording is allowed repo-wide now that
+ * mcp.blowhorn.ai is live (#5, #30).
  */
 const LOCAL_ONLY_RULES = [
   "no cloud.blowhorn.ai: the server runs locally",
-  "no hosted or remote server claims",
-  "no OAuth claims",
 ];
 
 /** The RULES `file` is held to. */

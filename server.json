@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.blowhorn-ai/blowhorn",
   "title": "Blowhorn",
-  "description": "Blowhorn's local MCP server on your Mac: your Blowhorn commands as tools, dry run first.",
+  "description": "Not a bot. It's you. Read-only hosted MCP, or local macOS server where changes are dry runs first.",
   "repository": {
     "url": "https://github.com/blowhorn-ai/blowhorn-mcp",
     "source": "github"
