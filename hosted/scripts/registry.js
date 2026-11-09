@@ -7,7 +7,8 @@
  * highest code, every definition names at least one probable cause and every
  * cause at least one remediation (the construct's description asks the
  * registry check for these; it has no minItems), and every outcome
- * src/errors.js maps has a definition. blowhorn-ai/blowhorn's registry has
+ * src/errors.js maps has a definition, and every definition is either mapped
+ * or a retired tombstone. blowhorn-ai/blowhorn's registry has
  * further rules of its own; they are not copied here, so they cannot drift.
  * Offline. scripts/check-drift.js and test/errors.test.js both run it.
  */
@@ -15,8 +16,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { Validator } from "@cfworker/json-schema";
-import { CODES } from "../src/errors.js";
-import { HOSTED, VENDOR, vendored } from "./catalog.js";
+import { CODES, RETIRED } from "../src/errors.js";
+import { HOSTED, VENDOR, vendored } from "./vendor.js";
 
 export const REGISTRY = path.join(HOSTED, "errors", "mcp.json");
 export const ERROR_DEFINITION = "schemas/dist/ErrorDefinition.schema.json";
@@ -43,9 +44,11 @@ export function errorDefinitionValidator(schema = errorDefinitionSchema()) {
 /**
  * Problem strings for `registry`, each naming a definition by its index and
  * code, or an outcome of `codes` (src/errors.js CODES) by name; [] when it is
- * sound.
+ * sound. A definition is either mapped by an outcome in `codes` or listed in
+ * `retired` (RETIRED, the tombstones), and never both: a number is never
+ * reused, and a retired code is never reported again.
  */
-export function registryProblems(registry = readRegistry(), schema = errorDefinitionSchema(), codes = CODES) {
+export function registryProblems(registry = readRegistry(), schema = errorDefinitionSchema(), codes = CODES, retired = RETIRED) {
   const problems = [];
   const keys = Object.keys(registry).sort();
   if (!isDeepStrictEqual(keys, REGISTRY_KEYS)) problems.push(`  keys are ${keys.join(", ")}; want ${REGISTRY_KEYS.join(", ")}`);
@@ -81,6 +84,14 @@ export function registryProblems(registry = readRegistry(), schema = errorDefini
   }
   for (const [outcome, code] of Object.entries(codes)) {
     if (!seen.has(code)) problems.push(`  outcome ${outcome}: no definition for ${code}`);
+    if (retired.includes(code)) problems.push(`  outcome ${outcome}: ${code} is retired`);
+  }
+  for (const code of retired) {
+    if (!seen.has(code)) problems.push(`  retired ${code}: no definition, so its number could be reused`);
+  }
+  const mapped = new Set(Object.values(codes));
+  for (const code of seen) {
+    if (!mapped.has(code) && !retired.includes(code)) problems.push(`  ${code}: no outcome maps to it and it is not retired`);
   }
   return problems;
 }

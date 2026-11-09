@@ -9,20 +9,33 @@
  */
 import registry from "../errors/mcp.json" with { type: "json" };
 
-/** Each failing outcome, the tool call events' (src/events.js) and the rate limit's, and its code. */
+/** Each failing outcome the gateway itself reports, and its code. */
 export const CODES = Object.freeze({
-  unknown_tool: "blowhorn-mcp-1000",
-  invalid_arguments: "blowhorn-mcp-1001",
-  refused: "blowhorn-mcp-1002",
-  cloud_rejected: "blowhorn-mcp-1003",
-  cloud_failed: "blowhorn-mcp-1004",
-  timeout: "blowhorn-mcp-1005",
-  unreachable: "blowhorn-mcp-1006",
-  redirect: "blowhorn-mcp-1007",
-  too_large: "blowhorn-mcp-1008",
-  not_json: "blowhorn-mcp-1009",
   rate_limited: "blowhorn-mcp-1010",
+  upstream_unreachable: "blowhorn-mcp-1011",
+  upstream_timeout: "blowhorn-mcp-1012",
+  upstream_redirect: "blowhorn-mcp-1013",
+  request_timeout: "blowhorn-mcp-1014",
 });
+
+/**
+ * Tombstones: codes the gateway reported through 0.1.x, when it ran the tools
+ * itself. Blowhorn Cloud's /mcp does that now, so no outcome maps to them and
+ * nothing emits them. Their definitions stay in errors/mcp.json, so the
+ * numbers are never reused and old references still resolve.
+ */
+export const RETIRED = Object.freeze([
+  "blowhorn-mcp-1000",
+  "blowhorn-mcp-1001",
+  "blowhorn-mcp-1002",
+  "blowhorn-mcp-1003",
+  "blowhorn-mcp-1004",
+  "blowhorn-mcp-1005",
+  "blowhorn-mcp-1006",
+  "blowhorn-mcp-1007",
+  "blowhorn-mcp-1008",
+  "blowhorn-mcp-1009",
+]);
 
 const BY_CODE = new Map(registry.definitions.map((d) => [d.code, d]));
 

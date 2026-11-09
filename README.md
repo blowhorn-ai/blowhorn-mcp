@@ -221,9 +221,9 @@ they drift.
 | `schemas/vendor/` | Upstream schemas, byte for byte, with `SOURCES.json` | no (`make schemas-refresh`) |
 | `scripts/` | generate, validate, check and schemas-refresh | no |
 | `tools/` | Dev tooling package (Ajv), apart from the published package | no |
-| `hosted/` | An interim read-only gateway, its own package; see [hosted/README.md](hosted/README.md) | `hosted/src/catalog.generated.json` (`make hosted-generate`) |
+| `hosted/` | An interim MCP transport proxy to Cloud's `/mcp`, its own package; see [hosted/README.md](hosted/README.md) | no |
 
-The hosted/ folder holds an interim read-only gateway; see [hosted/README.md](hosted/README.md).
+The hosted/ folder holds an interim transport proxy for Cloud's `/mcp` (not the local server this repo ships); see [hosted/README.md](hosted/README.md).
 
 ## Development
 
