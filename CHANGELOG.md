@@ -16,6 +16,13 @@ launcher's, which every listing file follows.
   smoke of `https://mcp.blowhorn.ai`, run by hand after a release and never by
   `make check` or CI. Its signed-in checks have not yet run in production. See
   `hosted/README.md`, Post-release smoke.
+- `hosted/`: with `BLOWHORN_MCP_TEST_EMAIL` and `BLOWHORN_MCP_TEST_PASSWORD`
+  set, the live smoke signs the test account in without a browser
+  (authorization code + PKCE, `resource=https://mcp.blowhorn.ai/mcp`, code
+  caught on the loopback redirect) and runs the signed-in checks with that
+  token. It skips, naming the step a person must do, while the account's
+  email is unverified or a hop needs a browser. Not yet run signed in against
+  production.
 
 ## 1.0.2
 

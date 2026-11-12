@@ -208,8 +208,8 @@ token, the signed-in path, is the opt-in `make hosted-smoke`
 ([Post-release smoke](#post-release-smoke)); run it after every release.
 Moving any of it into the workflow is a workflow change, so a separate
 approval. Have a person sign in with a real MCP client against production
-too: the smoke's signed-in checks have not yet run in production, because no
-test token exists.
+too: the smoke's signed-in checks have not yet run in production, because the
+test account's email is not verified yet.
 
 ## Rate limits
 
@@ -419,7 +419,7 @@ which resolves `cloudflare:workers` to the DurableObject stub in
 | `test/ratelimit.test.js` | Both Durable Object limits, their config and README tables, the fail-closed paths |
 | `test/errors.test.js`, `test/vendor.test.js` | The error registry with its tombstones, and the vendored schema pin |
 | `test/require-node.test.js` | The deploy's Node check |
-| `test/smoke-hosted.test.js` | The logic of `scripts/smoke-hosted.js` against a local mock server: metadata schema and `resource`, the 401 challenge, registration `201`, skip and exit 0 without tokens, exit 1 on a failed check, no secret in the output |
+| `test/smoke-hosted.test.js` | The logic of `scripts/smoke-hosted.js` against a local mock server: metadata schema and `resource`, the 401 challenge, registration `201`, skip and exit 0 without tokens, exit 1 on a failed check, the test account's PKCE sign-in (skip without it, skip at `/verification` or a page that needs a browser, the code exchanged and the SDK checks run), no secret in the output |
 | `scripts/smoke-hosted.js` | **Opt-in live smoke against the deployed origin**, not a fake-upstream contract test and not run by `make hosted-check` or CI. See [Post-release smoke](#post-release-smoke) |
 
 **`test/oauth-contract.test.js` is a fake-upstream contract test.** Its Cloud is
@@ -516,7 +516,8 @@ node hosted/scripts/smoke-hosted.js --base https://staging.example
 ```
 
 Every request sends `User-Agent: blowhorn-verify/1.0` (a default one can
-draw a Cloudflare 1010 challenge) and follows no redirect. It prints one
+draw a Cloudflare 1010 challenge) and follows no redirect by itself; only the
+test account sign-in follows them, by hand. It prints one
 `PASS`, `FAIL` or `SKIP` line per check with the HTTP status, and exits 1 on
 any failure:
 
@@ -528,6 +529,8 @@ any failure:
 | `mcp-get-401`, `mcp-post-401` | `GET /mcp` and `POST /mcp` `initialize` with no token: `401` and a Bearer challenge with `resource_metadata="<base>/.well-known/oauth-protected-resource/mcp"` |
 | `dcr`, `dcr-cleanup` | Registration of a public native client with a loopback redirect: `201`, a `client_id`, `token_endpoint_auth_method` `none` and no `client_secret`; then an RFC 7592 delete if the answer offers one |
 | `mcp-token-*` | With a token: the official SDK client's `initialize` negotiates `2025-11-25`, `tools/list` is exactly the six read tools (`listContentItems`, `getContentItem`, `getEvents`, `getConnections`, `listSchedules`, `getScheduleById`), and one read `tools/call` succeeds |
+| `user-login`, `user-consent`, `user-authorize`, `user-token` | With the test account and no MCP token: an authorization code + PKCE (S256) grant for the client `dcr` registered, with no browser (see [Test account sign-in](#test-account-sign-in)). Sign-in sets a session cookie, consent is accepted, the code arrives on `http://127.0.0.1:8976/oauth/callback` with the `state` sent, and the `token_endpoint` answers `200` with a Bearer `access_token` (if it is a JWT, its `aud` includes `<base>/mcp`) |
+| `user-token-*` | The `mcp-token-*` checks with that access token |
 | `cloud-token-*` | The same through a legacy Cloud API token, labeled as that path |
 | `wrong-audience` | A token for another audience is refused with `401` |
 
@@ -538,11 +541,65 @@ any failure:
 | `BLOWHORN_CLOUD_TOKEN` | Legacy Cloud API token; runs `cloud-token-*` |
 | `SMOKE_HOSTED_WRONG_AUD_TOKEN` | A real token minted for another audience; runs `wrong-audience` |
 | `SMOKE_HOSTED_ORGANIZATION_ID` or `BLOWHORN_CLOUD_ORGANIZATION` | `organizationId` for the read `tools/call`; without it only the call is skipped |
+| `BLOWHORN_MCP_TEST_EMAIL` and `BLOWHORN_MCP_TEST_PASSWORD` | The test account (`test-mcp@blowhorn.ai`). With both set and no `SMOKE_HOSTED_TOKEN` or `BLOWHORN_MCP_TOKEN`, runs `user-*`; a provided MCP token wins |
 
-Tokens are read from the environment only. Each signed-in check whose token
-is unset is skipped with the variable it needs, and the run still exits 0 if
-everything else passed. Nothing prints a token, a `client_secret` or a
-`registration_access_token`: every line is redacted of them.
+Tokens and the test account are read from the environment only. Each
+signed-in check whose input is unset is skipped with the variables it needs,
+and the run still exits 0 if everything else passed. Nothing prints a token,
+the password, a csrf or cookie value, the authorization code or PKCE
+verifier, a `client_secret` or a `registration_access_token`: every line is
+redacted of them. The test account email is printed, so the output says
+whose inbox to check.
+
+#### Test account sign-in
+
+With `BLOWHORN_MCP_TEST_EMAIL` and `BLOWHORN_MCP_TEST_PASSWORD` set, the smoke
+gets a user-bound token the way a native MCP client does, without a browser:
+
+1. It listens on the registered redirect `http://127.0.0.1:8976/oauth/callback`
+   and opens the issuer metadata's `authorization_endpoint`
+   (`https://cloud.blowhorn.ai/oauth2/auth` in production) with
+   `response_type=code`, PKCE S256, the `client_id` from `dcr`,
+   `scope=openid offline_access` and `resource=<base>/mcp`, so the audience
+   is bound at authorize and consent time. Client credentials are never
+   used: Cloud refuses them by design.
+2. At the login challenge it signs in through the same Cloud-brokered flow
+   the product uses: `GET /api/auth/flow?type=login&login_challenge=...`,
+   then `POST /api/auth/flow/submit` with `identifier`, `password`,
+   `csrf_token` and `method=password`, forwarding the flow's cookies.
+3. At `/consent?consent_challenge=...` it follows an auto-accept redirect,
+   or submits a plain HTML `POST` form that carries `consent_challenge` and
+   an accept button.
+4. It catches the code on the loopback, exchanges it at the `token_endpoint`
+   (`grant_type=authorization_code`, `code_verifier`, `client_id`,
+   `redirect_uri`, `resource=<base>/mcp`), and runs `user-token-*` with the
+   access token.
+
+Redirects are followed with the smoke User-Agent and never off the
+`authorization_endpoint`'s origin, except the loopback redirect. The test
+account is pinned to production Cloud: when the `authorization_endpoint` is
+neither on `https://cloud.blowhorn.ai` nor on a loopback `http` origin (the
+mock tests), `user-token` is skipped and the password is never sent, so
+staging and other bases are checked with `SMOKE_HOSTED_TOKEN` or
+`BLOWHORN_MCP_TOKEN` instead.
+
+Steps that need a person are skipped, never passed, and the run still exits
+0 if everything else passed:
+
+- **Email verification.** Production sign-in requires a verified address.
+  While the test account's email is unverified, the login answers a redirect
+  to `/verification`, and `user-login` is skipped with the account email and
+  this step: a person who can read that inbox opens the verification link
+  Cloud sent, then re-runs the smoke. The verification is never bypassed.
+- **A Cloudflare challenge** (a `403`, `429` or `503` challenge page, or
+  `cf-mitigated: challenge`) on any hop, a captcha in the login flow, or a
+  consent page with no plain form (a JavaScript widget). The skip prints the
+  URL where it stopped and the authorize URL a person (or a browser driver)
+  must open to sign in as the test account and accept consent.
+
+The audience-bound negative case stays `SMOKE_HOSTED_WRONG_AUD_TOKEN`: a real
+token for another audience, such as `https://cloud.blowhorn.ai/mcp`, which is
+not on the production allowlist. The smoke never mints one.
 
 **Each run may leave one OAuth client in Cloud.** Cloud's registration
 answer has no `registration_client_uri` or `registration_access_token`, so
@@ -551,6 +608,8 @@ deletes the client if those fields ever appear). Every client it registers is
 named `blowhorn-mcp-hosted-smoke <UTC time>`, so they can be found and removed
 in Cloud.
 
-The signed-in checks have not run against production yet: no test token
-exists. Without one, the smoke proves discovery, the challenge and
-registration only.
+The signed-in checks have not run against production yet. The test account
+exists, but its email is not verified, so `user-login` stops at
+`/verification`; whether Cloud's consent page can be completed without a
+browser is also unproven. Until a signed-in run passes, the smoke proves
+discovery, the challenge and registration only.

@@ -86,7 +86,8 @@ hosted-check: hosted/node_modules/@modelcontextprotocol/sdk/package.json
 
 ## hosted-smoke: the opt-in live smoke of the deployed origin (network). Not part
 ## of check or hosted-check. Each run registers one OAuth client named
-## blowhorn-mcp-hosted-smoke <UTC time>. Signed-in checks need a token in the
+## blowhorn-mcp-hosted-smoke <UTC time>. Signed-in checks need a token or the
+## test account (BLOWHORN_MCP_TEST_EMAIL, BLOWHORN_MCP_TEST_PASSWORD) in the
 ## environment and are skipped without one; see hosted/README.md.
 ## Point it elsewhere with SMOKE_HOSTED_BASE=<url>.
 hosted-smoke: hosted/node_modules/@modelcontextprotocol/sdk/package.json
