@@ -12,6 +12,10 @@ launcher's, which every listing file follows.
 - `hosted/`: an unauthenticated `GET /mcp` (no usable Bearer token) is answered
   here with the `401` challenge, so a browser `Accept: text/html` is not
   forwarded and turned into `blowhorn-mcp-1013` (#38).
+- `hosted/`: `make hosted-smoke` (`npm run smoke:hosted`) is an opt-in live
+  smoke of `https://mcp.blowhorn.ai`, run by hand after a release and never by
+  `make check` or CI. Its signed-in checks have not yet run in production. See
+  `hosted/README.md`, Post-release smoke.
 
 ## 1.0.2
 
