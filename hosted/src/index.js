@@ -7,7 +7,9 @@
  * This Worker is not an MCP server, not an OAuth authorization server, and
  * not a token gateway: it carries each MCP request to
  * https://cloud.blowhorn.ai/mcp and the answer back, byte for byte
- * (src/proxy.js). Cloud owns the canonical resource and audience
+ * (src/proxy.js), except a GET /mcp with no usable Bearer token, which it
+ * answers with the 401 challenge and does not forward. Cloud owns the
+ * canonical resource and audience
  * (https://cloud.blowhorn.ai/mcp), token validation and the tools. The Worker
  * serves RFC 9728 metadata locally (src/metadata.js) pointing at Cloud's
  * Blowhorn issuer, and rewrites Cloud's 401 WWW-Authenticate so
@@ -152,6 +154,25 @@ async function mcp(request, env, origin) {
         }
       }
     }
+  }
+  // A browser GET sends Accept: text/html and no token. Cloud answers that
+  // with a login redirect, which this gateway refuses (502, blowhorn-mcp-1013).
+  // Answer 401 with the public Bearer challenge and do not call Cloud. A
+  // usable Bearer token, and POST and DELETE, still go.
+  if (request.method === "GET" && !bearerToken(request.headers.get("Authorization"))) {
+    return json(
+      401,
+      {
+        error: "unauthorized",
+        error_description: "Bearer token required. Discover the authorization server via the resource_metadata URL in WWW-Authenticate.",
+      },
+      {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+        "WWW-Authenticate": publicChallenge(),
+        ...cors,
+      },
+    );
   }
   return carry({ base, path: "/mcp", request, headers: forwardHeaders(request.headers, REQUEST_HEADERS), body, cors, route: ROUTES["/mcp"] });
 }

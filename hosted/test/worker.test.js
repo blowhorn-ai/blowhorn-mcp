@@ -192,3 +192,25 @@ test("the metadata path constant is the RFC 9728 path-inserted form of the resou
   assert.strictEqual(PRM, `${MCP_ORIGIN}/.well-known/oauth-protected-resource${new URL(MCP).pathname}`);
   assert.strictEqual(PRM_PATH, "/.well-known/oauth-protected-resource/mcp");
 });
+
+test("an unauthenticated GET /mcp is the 401 challenge and never calls Cloud", async (t) => {
+  const calls = mockFetch(t, () => new Response("from-cloud", { status: 200 }));
+  const challenge = `Bearer resource_metadata="${PRM}"`;
+  const body = {
+    error: "unauthorized",
+    error_description: "Bearer token required. Discover the authorization server via the resource_metadata URL in WWW-Authenticate.",
+  };
+  for (const headers of [{ Accept: "text/html" }, undefined, { Accept: "text/html", Authorization: "Bearer" }]) {
+    const { res, text } = await call(new Request(MCP, { method: "GET", headers }));
+    assert.strictEqual(res.status, 401, JSON.stringify(headers));
+    assert.strictEqual(res.headers.get("WWW-Authenticate"), challenge, JSON.stringify(headers));
+    assert.strictEqual(res.headers.get("Content-Type"), "application/json; charset=utf-8", JSON.stringify(headers));
+    assert.strictEqual(res.headers.get("Cache-Control"), "no-store", JSON.stringify(headers));
+    assert.deepStrictEqual(JSON.parse(text), body, JSON.stringify(headers));
+  }
+  assert.strictEqual(calls.length, 0, "no unauthenticated GET reached Cloud");
+
+  const authed = await call(new Request(MCP, { method: "GET", headers: { Accept: "text/html", Authorization: `Bearer ${TOKEN}` } }));
+  assert.strictEqual(authed.res.status, 200);
+  assert.strictEqual(calls.length, 1, "a GET with a usable Bearer token is still forwarded");
+});

@@ -5,6 +5,10 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- `hosted/`: an unauthenticated `GET /mcp` (no usable Bearer token) is answered
+  here with the `401` challenge, so a browser `Accept: text/html` is not
+  forwarded and turned into `blowhorn-mcp-1013` (#38).
+
 ## 1.0.2
 
 - Round-2 listing copy names social media management and the supported platforms (#5).

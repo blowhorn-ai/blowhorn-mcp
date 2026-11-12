@@ -71,18 +71,19 @@ test("a presented but invalid token gets Cloud's invalid_token challenge with th
   assert.strictEqual(cloud.seen.at(-1).headers.authorization, "Bearer " + "x".repeat(5000), "the header went to Cloud exactly as received");
 });
 
-test("GET and DELETE /mcp go to Cloud, and Cloud's answer (a 405 and its Allow, or a 401) comes back", async (t) => {
+test("authenticated GET and DELETE /mcp go to Cloud, and Cloud's answer comes back; an unauthenticated GET does not", async (t) => {
   const cloud = fakeCloud({ legacyTokens: [TOKEN] });
   const calls = mockFetch(t, (url, init) => cloud.handle(url, init));
   const noAuth = await worker.fetch(new Request(MCP, { method: "GET", headers: { Accept: "text/event-stream" } }), ENV, {});
   assert.strictEqual(noAuth.status, 401);
   assert.strictEqual(noAuth.headers.get("WWW-Authenticate"), CHALLENGE);
+  assert.strictEqual(calls.length, 0, "an unauthenticated GET is answered here");
   for (const method of ["GET", "DELETE"]) {
     const res = await worker.fetch(new Request(MCP, { method, headers: { ...auth, "Mcp-Session-Id": "s-1" } }), ENV, {});
     assert.strictEqual(res.status, 405, method);
     assert.strictEqual(res.headers.get("Allow"), "POST", method);
   }
-  assert.deepStrictEqual(calls.map((c) => c.init.method), ["GET", "GET", "DELETE"]);
+  assert.deepStrictEqual(calls.map((c) => c.init.method), ["GET", "DELETE"]);
   assert.ok(calls.every((c) => c.url === `${CLOUD}/mcp`));
 });
 

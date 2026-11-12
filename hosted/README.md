@@ -18,7 +18,8 @@ this repo is about.
 ## What it does
 
 Clients connect at `https://mcp.blowhorn.ai/mcp`. The Worker is a transport
-proxy: it carries each MCP request to Cloud's `/mcp` and Cloud's answer back.
+proxy: it carries MCP requests to Cloud's `/mcp` and Cloud's answer back,
+except a `GET` with no usable Bearer token, which is answered here (see the route table).
 It is not an MCP server, not an OAuth authorization server, and not a token
 gateway. It does not read, check, mint, exchange or store a credential, and it
 never forwards one to a REST API.
@@ -38,7 +39,7 @@ authorize and no token endpoint.
 | Path | Methods | Goes to |
 |------|---------|---------|
 | `/healthz` | GET, HEAD | Answered here, no Cloud call: `{ ok, name, version, interim: true }` |
-| `/mcp` | POST, GET, DELETE (OPTIONS answered here for allowed origins) | `https://cloud.blowhorn.ai/mcp` (Bearer forwarded; `WWW-Authenticate` rewritten) |
+| `/mcp` | POST, GET, DELETE (OPTIONS answered here for allowed origins) | `https://cloud.blowhorn.ai/mcp` (Bearer forwarded; `WWW-Authenticate` rewritten). A GET with no usable Bearer token is answered here with the 401 challenge and is not forwarded |
 | `/.well-known/oauth-protected-resource/mcp` | GET, HEAD (OPTIONS answered here) | Answered here (RFC 9728) |
 | `/.well-known/oauth-protected-resource` | GET, HEAD (OPTIONS answered here) | Answered here (same document) |
 
@@ -64,6 +65,12 @@ What crosses the Worker, both ways, is filtered by an allowlist:
   serve.
 - **Redirects** from Cloud are never followed and never passed on: the Worker
   answers `502` (`blowhorn-mcp-1013`).
+- **Unauthenticated GET.** A `GET /mcp` with no usable Bearer token is answered
+  here with `401` and the public `WWW-Authenticate` Bearer challenge
+  (`resource_metadata` for this origin; see [Before cutover](#before-cutover)),
+  and Cloud is not called. A browser `Accept: text/html` therefore does not
+  become a `502` (`blowhorn-mcp-1013`). A GET that carries a usable Bearer
+  token, and every POST and DELETE, are still forwarded.
 - **Bodies.** An answer is streamed to the client as it arrives, never
   buffered, and the 20 s timeout covers only the status and headers, so a
   long-lived event stream is not cut. A request body is read once, bounded at
@@ -126,11 +133,16 @@ event for each call. Those now belong to Cloud, so after cutover:
 - Tool results, tool errors and the activity events come from Cloud, not from
   `blowhorn-mcp-1000` to `blowhorn-mcp-1009`, which are
   [retired](#error-codes) and never reported again.
-- A missing or bad token is Cloud's `401` with its `WWW-Authenticate`, not the
-  Worker's `Bearer realm="blowhorn-mcp"`. An RFC 6750 client treats the extra
-  `resource_metadata` parameter as part of an ordinary Bearer challenge.
-- `GET` and `DELETE /mcp`, a batch without a token, the response size and
-  timeout guards, argument validation and redaction are Cloud's decisions.
+- A missing or bad token is a `401` with `WWW-Authenticate`, not the
+  Worker's old `Bearer realm="blowhorn-mcp"`. An unauthenticated `GET` is
+  answered here; a missing or bad token on any other method is still Cloud's
+  `401`, with `resource_metadata` rewritten to this origin. An RFC 6750 client
+  treats the extra `resource_metadata` parameter as part of an ordinary Bearer
+  challenge.
+- `DELETE /mcp`, a `GET` that carries a usable Bearer token, a batch without
+  a token, the response size and timeout guards, argument validation and
+  redaction are Cloud's decisions. A `GET` with no usable Bearer token is
+  answered here.
 - The Worker still refuses a batch or a non-JSON body that carries a Bearer
   token, bounds the request at 1 MB and keeps both rate limits.
 
@@ -215,7 +227,9 @@ request, with or without a token: it
 is the only bound on a client that rotates through made-up tokens, since
 each new token gets its own caller bucket. So one address can still send as
 many requests a minute as the address limit allows (the table above) that
-reach Cloud and are refused there with `401`; the address limit caps that
+reach Cloud and are refused there with `401`. An unauthenticated `GET` is
+answered here and does not reach Cloud; it still counts toward the address
+limit. The address limit caps that
 flood, it does not cut it off before any work. It is
 shared by everyone behind one egress address, so clients behind one NAT,
 VPN or CI runner pool count together, and a hosted MCP client that calls
@@ -234,10 +248,11 @@ after the address limit, and refuses a batch (a JSON array) with a `400`
 before the caller limit, so a batch counts nothing; a single `tools/call`
 message counts one, however its `method` key is cased. A body that does not
 parse counts nothing and gets the `-32700` parse error. A request without a
-Bearer token spends no caller limit at all: Cloud challenges it. So does a
-`Bearer` value that is not a well-formed token (over 4096 characters, or with
-spaces or control characters): there is no caller to key, so the address limit
-is its only bound, and Cloud refuses it.
+usable Bearer token spends no caller limit at all. On `GET` the Worker answers
+the 401 challenge and does not call Cloud; on any other method Cloud
+challenges it. A `Bearer` value that is not well-formed (over 4096 characters,
+or with spaces or control characters) is the same: there is no caller to key,
+so the address limit is its only bound.
 A refused request answers HTTP
 `429` with `Retry-After` set to the seconds left in the current window
 (at least 1; the Durable Object returns it), the usual CORS headers for an

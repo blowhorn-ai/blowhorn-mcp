@@ -33,7 +33,8 @@ const ALLOWED_BASES = [DEFAULT_BASE];
 /**
  * The only paths the gateway serves, each mapped to the same path on Cloud.
  * Everything else is a 404 from the Worker. `methods` are the ones carried to
- * Cloud; the Worker answers OPTIONS itself. The metadata routes are public
+ * Cloud; the Worker answers OPTIONS itself, and src/index.js answers a
+ * GET /mcp with no usable Bearer token. The metadata routes are public
  * RFC 9728 documents answered locally by src/metadata.js (not forwarded), so
  * a client that starts at https://mcp.blowhorn.ai learns Cloud's Blowhorn
  * issuer and the canonical audience without depending on Cloud's tenant host
