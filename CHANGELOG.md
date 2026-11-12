@@ -5,6 +5,10 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- `hosted/README.md`: Cloud dynamic client registration is on
+  (layer5io/meshery-cloud#6402, Cloud v1.0.367). `POST /oauth2/register`
+  returns 400 asking for `redirect_uris`, not 403. End-to-end sign-in is
+  still waiting on Cloud accepting tokens for `https://mcp.blowhorn.ai/mcp`.
 - `hosted/`: an unauthenticated `GET /mcp` (no usable Bearer token) is answered
   here with the `401` challenge, so a browser `Accept: text/html` is not
   forwarded and turned into `blowhorn-mcp-1013` (#38).

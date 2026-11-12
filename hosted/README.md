@@ -9,9 +9,12 @@ this repo is about.
 
 > **Status: deployed.** Version 0.2.0 is live at `https://mcp.blowhorn.ai`
 > (merged in blowhorn-mcp#30). It is a transport proxy for Cloud's `/mcp`,
-> and serves RFC 9728 protected-resource metadata locally. End-to-end MCP
-> OAuth client sign-in is still gated on Cloud enabling dynamic client
-> registration (`POST /oauth2/register` returns 403 until then). Bearer
+> and serves RFC 9728 protected-resource metadata locally. Cloud dynamic
+> client registration is on (layer5io/meshery-cloud#6402, shipped in Cloud
+> v1.0.367): `POST https://cloud.blowhorn.ai/oauth2/register` returns 400
+> asking for `redirect_uris`. End-to-end MCP OAuth client sign-in is still
+> waiting on Cloud accepting tokens whose audience is
+> `https://mcp.blowhorn.ai/mcp` when the Worker forwards them. Bearer
 > Cloud API tokens keep working. See [Before cutover](#before-cutover) and
 > [Tests](#tests).
 
