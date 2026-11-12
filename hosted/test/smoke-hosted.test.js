@@ -89,14 +89,14 @@ async function mockOrigin(t, options = {}) {
     const signedIn = cookie.includes(`session_cookie=${SESSION}`);
     const challenge = options.challenge ?? `Bearer resource_metadata="${prm}"`;
     const asPath = options.asAppended ? `${issuerPath}/.well-known/oauth-authorization-server` : `/.well-known/oauth-authorization-server${issuerPath}`;
-    const asDoc = { issuer: options.asIssuer ?? issuer, authorization_endpoint: `${issuer}/oauth2/auth`, token_endpoint: `${issuer}/oauth2/token`, response_types_supported: ["code"], registration_endpoint: registration };
+    const asDoc = { issuer: options.asIssuer ?? issuer, authorization_endpoint: options.authorizeAt ?? `${issuer}/oauth2/auth`, token_endpoint: `${issuer}/oauth2/token`, response_types_supported: ["code"], registration_endpoint: registration };
     switch (`${req.method} ${url.pathname}`) {
       case `GET ${issuerPath}/oauth2/auth`: {
         const q = url.searchParams;
         if (q.has("consent_verifier")) return redirect(302, `${REDIRECT_URI}?code=${CODE}&scope=openid+offline_access&state=${state.authorize.get("state")}`);
         if (q.has("login_verifier")) return signedIn ? redirect(302, `${state.urls.origin}/consent?consent_challenge=consent-1`) : json(401, { error: "no session" });
         state.authorize = q;
-        return redirect(302, `${state.urls.origin}/login?login_challenge=login-1`);
+        return redirect(302, `${options.loginAt ?? state.urls.origin}/login?login_challenge=login-1`);
       }
       case "GET /api/auth/flow":
         state.flowQuery = url.searchParams;
@@ -385,4 +385,24 @@ test("test account: a consent page that needs a browser, or a Cloudflare challen
     assert.ok(!Object.keys(r.status).some((n) => n.startsWith("user-token")), "no token, no signed-in checks");
     for (const secret of [PASSWORD, CSRF, CSRF_COOKIE, SESSION]) assert.ok(!r.out.includes(secret));
   }
+});
+
+test("test account pinned to production Cloud: another authorization_endpoint origin, or a redirect off it, skips and never receives the password", async (t) => {
+  const staging = await production(t, { authorizeAt: "https://staging.example/hydra/oauth2/auth" });
+  const pinned = await smoke(staging, ACCOUNT);
+  assert.strictEqual(pinned.code, 0, pinned.out);
+  assert.strictEqual(pinned.status["user-token"], "skip", pinned.out);
+  assert.match(pinned.out, /SKIP user-token: test account sign-in skipped: the test account is pinned to production Cloud https:\/\/cloud\.blowhorn\.ai, and the authorization_endpoint is at https:\/\/staging\.example; SMOKE_HOSTED_TOKEN or BLOWHORN_MCP_TOKEN can still check this base/);
+  assert.ok(!staging.hosts.has("https://staging.example"), "nothing was sent to the other origin");
+  assert.ok(!staging.seen.some((s) => s.path.startsWith("/api/auth") || s.path.endsWith("/oauth2/auth")), "no sign-in started");
+  assert.strictEqual(staging.state.login, undefined);
+
+  const away = await production(t, { loginAt: "https://elsewhere.example" });
+  const off = await smoke(away, ACCOUNT);
+  assert.strictEqual(off.code, 0, off.out);
+  assert.strictEqual(off.status["user-authorize"], "skip", off.out);
+  assert.match(off.out, /SKIP user-authorize: a redirect went to https:\/\/elsewhere\.example\/login, off https:\/\/cloud\.blowhorn\.ai, and is not followed/);
+  assert.ok(!away.hosts.has("https://elsewhere.example"), "the redirect off the origin was not followed");
+  assert.strictEqual(away.state.login, undefined, "the password was never submitted");
+  for (const r of [pinned, off]) assert.ok(!r.out.includes(PASSWORD));
 });

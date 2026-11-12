@@ -575,8 +575,13 @@ gets a user-bound token the way a native MCP client does, without a browser:
    `redirect_uri`, `resource=<base>/mcp`), and runs `user-token-*` with the
    access token.
 
-Redirects are followed with the smoke User-Agent and never to another
-scheme, except the loopback redirect.
+Redirects are followed with the smoke User-Agent and never off the
+`authorization_endpoint`'s origin, except the loopback redirect. The test
+account is pinned to production Cloud: when the `authorization_endpoint` is
+neither on `https://cloud.blowhorn.ai` nor on a loopback `http` origin (the
+mock tests), `user-token` is skipped and the password is never sent, so
+staging and other bases are checked with `SMOKE_HOSTED_TOKEN` or
+`BLOWHORN_MCP_TOKEN` instead.
 
 Steps that need a person are skipped, never passed, and the run still exits
 0 if everything else passed:

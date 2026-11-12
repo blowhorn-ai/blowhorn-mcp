@@ -334,6 +334,12 @@ const LOOPBACK = new URL(REDIRECT_URI);
 
 const base64url = (buf) => Buffer.from(buf).toString("base64url");
 
+/** Production Cloud, or a loopback http origin (the mock tests): the only places the test account is sent. */
+function testAccountOrigin(origin) {
+  const url = new URL(origin);
+  return origin === DEFAULT_BASE || (url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname));
+}
+
 /** Where to send a person to finish what the smoke could not do headlessly. */
 function personStep(flow) {
   return `a person (or a browser driver) must open ${flow.authorize.href}, sign in as ${flow.email.value} and accept consent, then re-run the smoke`;
@@ -384,18 +390,17 @@ function cloudflareChallenge(res, body) {
  * GETs `start` and follows redirects by hand until something needs this
  * script: the loopback callback (fetched, so the listener catches it), a
  * login challenge, the verification page, or a page that answers 200.
- * Never moves to another scheme than the start URL's, except to the loopback.
+ * Never leaves the authorization_endpoint's origin, except to the loopback.
  */
-async function browse(ctx, jar, start) {
+async function browse(ctx, jar, flow, start) {
   let url = new URL(start);
-  const scheme = url.protocol;
   for (let hop = 0; hop < MAX_HOPS; hop++) {
     if (url.origin === LOOPBACK.origin && url.pathname === LOOPBACK.pathname) {
       const res = await ctx.fetch(url.href);
       await res.body?.cancel();
       return { kind: "callback", url };
     }
-    if (url.protocol !== scheme) return { kind: "off-scheme", url };
+    if (url.origin !== flow.origin) return { kind: "off-origin", url };
     if (url.searchParams.has("login_challenge")) return { kind: "login", url };
     if (url.pathname.startsWith("/verification")) return { kind: "verification", url };
     const res = await jar.fetch(url, { headers: { Accept: "text/html,application/json" } });
@@ -454,7 +459,7 @@ function uiMessages(doc) {
 /** The Cloud-brokered password login. Returns the URL to continue at, or undefined after reporting why not. */
 async function signIn(ctx, jar, flow, loginUrl) {
   const { report, secrets } = ctx;
-  const flowUrl = new URL("/api/auth/flow", loginUrl.origin);
+  const flowUrl = new URL("/api/auth/flow", flow.origin);
   flowUrl.searchParams.set("type", "login");
   const challenge = loginUrl.searchParams.get("login_challenge");
   if (challenge) flowUrl.searchParams.set("login_challenge", challenge);
@@ -476,11 +481,11 @@ async function signIn(ctx, jar, flow, loginUrl) {
   const csrf = nodes.find((n) => n.attributes?.name === "csrf_token")?.attributes?.value ?? doc.csrf_token;
   if (csrf) secrets.add(csrf);
   if (nodes.some((n) => n.group === "captcha" || /captcha|turnstile/i.test(n.attributes?.name ?? ""))) {
-    report.skip("user-login", `the login flow at ${loginUrl.origin} has a captcha; ${personStep(flow)}`);
+    report.skip("user-login", `the login flow at ${flow.origin} has a captcha; ${personStep(flow)}`);
     return undefined;
   }
 
-  const submit = new URL("/api/auth/flow/submit", loginUrl.origin);
+  const submit = new URL("/api/auth/flow/submit", flow.origin);
   submit.searchParams.set("id", doc.id);
   submit.searchParams.set("type", "login");
   const form = new URLSearchParams({ identifier: flow.email.value, password: flow.password.value, method: "password" });
@@ -524,6 +529,10 @@ async function giveConsent(ctx, jar, flow, page) {
     ctx.report.skip("user-consent", `GET ${page.url.href} ${page.res.status} is a consent page with no plain HTML form to submit (a JavaScript widget needs a browser); ${personStep(flow)}`);
     return undefined;
   }
+  if (form.action.origin !== flow.origin) {
+    ctx.report.skip("user-consent", `the consent form at ${where} posts to ${form.action.origin}, not ${flow.origin}, and is not submitted; ${personStep(flow)}`);
+    return undefined;
+  }
   const res = await jar.fetch(form.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "text/html,application/json" }, body: form.fields.toString() });
   const text = await res.text();
   const location = res.headers.get("location");
@@ -549,8 +558,8 @@ function stopped(ctx, flow, hop, stage) {
       return ctx.report.skip(stage, `GET ${hop.url.href} ${hop.res.status} is a Cloudflare challenge; ${personStep(flow)}`);
     case "verification":
       return ctx.report.skip(stage, `redirected to ${at}: email verification is required for ${flow.email.name}=${flow.email.value}. A person who can read that inbox must open the verification link Cloud sent to it, then re-run the smoke`);
-    case "off-scheme":
-      return ctx.report.fail(stage, `a redirect went to ${hop.url.protocol} (${at}), which is not followed`);
+    case "off-origin":
+      return ctx.report.skip(stage, `a redirect went to ${at}, off ${flow.origin}, and is not followed; the test account is only sent to ${flow.origin}`);
     case "too-many":
       return ctx.report.fail(stage, `more than ${MAX_HOPS} redirects, last at ${at}`);
     case "login":
@@ -612,6 +621,11 @@ export async function obtainUserToken(ctx, as, clientId, email, password) {
     report.skip("user-token", "the authorization server metadata has no authorization_endpoint and token_endpoint");
     return undefined;
   }
+  const origin = new URL(as.authorization_endpoint).origin;
+  if (!testAccountOrigin(origin)) {
+    report.skip("user-token", `test account sign-in skipped: the test account is pinned to production Cloud ${DEFAULT_BASE}, and the authorization_endpoint is at ${origin}; ${ENV_NAMES.mcpToken.join(" or ")} can still check this base`);
+    return undefined;
+  }
   const resource = `${base}/mcp`;
   const verifier = base64url(randomBytes(32));
   const state = base64url(randomBytes(16));
@@ -628,7 +642,7 @@ export async function obtainUserToken(ctx, as, clientId, email, password) {
     code_challenge_method: "S256",
   }))
     authorize.searchParams.set(k, v);
-  const flow = { authorize, email, password };
+  const flow = { authorize, origin, email, password };
 
   let loopback;
   try {
@@ -640,7 +654,7 @@ export async function obtainUserToken(ctx, as, clientId, email, password) {
   try {
     report.note(`test account sign-in for ${email.value} (${email.name}): authorization code + PKCE S256, resource ${resource}, client_id ${clientId}`);
     const jar = new CookieJar(ctx);
-    let hop = await browse(ctx, jar, authorize);
+    let hop = await browse(ctx, jar, flow, authorize);
     let signedIn = false;
     let consented = false;
     while (hop.kind === "login" || hop.kind === "consent") {
@@ -653,7 +667,7 @@ export async function obtainUserToken(ctx, as, clientId, email, password) {
         next = await giveConsent(ctx, jar, flow, hop);
       } else break;
       if (!next) return undefined;
-      hop = await browse(ctx, jar, next);
+      hop = await browse(ctx, jar, flow, next);
     }
     if (hop.kind !== "callback") {
       stopped(ctx, flow, hop, hop.kind === "verification" ? "user-login" : "user-authorize");
