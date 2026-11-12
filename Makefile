@@ -11,7 +11,7 @@ TAG     := v$(VERSION)
 REQUIRE_PLAIN_VERSION = @printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "$@: version $(VERSION) in package.json is not plain X.Y.Z"; exit 1; }
 
 .PHONY: install generate check check-drift validate check-copy check-skill check-facts check-logo test check-pack schemas-refresh release publish \
-	hosted-install hosted-check hosted-schemas-refresh hosted-require-node hosted-deploy
+	hosted-install hosted-check hosted-smoke hosted-schemas-refresh hosted-require-node hosted-deploy
 
 ## install: dev tooling (Ajv) into tools/node_modules. The root package has
 ## "os": ["darwin"], which makes npm refuse any install at the root on other
@@ -83,6 +83,14 @@ hosted/node_modules/@modelcontextprotocol/sdk/package.json:
 hosted-check: hosted/node_modules/@modelcontextprotocol/sdk/package.json
 	node hosted/scripts/check-drift.js
 	cd hosted && node --import ./test/support/register.js --test test/*.test.js
+
+## hosted-smoke: the opt-in live smoke of the deployed origin (network). Not part
+## of check or hosted-check. Each run registers one OAuth client named
+## blowhorn-mcp-hosted-smoke <UTC time>. Signed-in checks need a token in the
+## environment and are skipped without one; see hosted/README.md.
+## Point it elsewhere with SMOKE_HOSTED_BASE=<url>.
+hosted-smoke: hosted/node_modules/@modelcontextprotocol/sdk/package.json
+	cd hosted && node scripts/smoke-hosted.js
 
 ## hosted-schemas-refresh: re-download hosted/schemas/vendor/ at the pinned commit (network).
 ## blowhorn-ai/blowhorn is private: run it with GITHUB_TOKEN=$(gh auth token).
