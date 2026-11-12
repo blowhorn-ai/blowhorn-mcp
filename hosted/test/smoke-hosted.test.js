@@ -61,13 +61,14 @@ async function mockOrigin(t, options = {}) {
       res.end(JSON.stringify(doc));
     };
     const { prm, issuer, issuerPath, registration } = state.urls;
-    const challenge = `Bearer resource_metadata="${prm}"`;
-    const asDoc = { issuer, authorization_endpoint: `${issuer}/oauth2/auth`, token_endpoint: `${issuer}/oauth2/token`, response_types_supported: ["code"], registration_endpoint: registration };
+    const challenge = options.challenge ?? `Bearer resource_metadata="${prm}"`;
+    const asPath = options.asAppended ? `${issuerPath}/.well-known/oauth-authorization-server` : `/.well-known/oauth-authorization-server${issuerPath}`;
+    const asDoc = { issuer: options.asIssuer ?? issuer, authorization_endpoint: `${issuer}/oauth2/auth`, token_endpoint: `${issuer}/oauth2/token`, response_types_supported: ["code"], registration_endpoint: registration };
     switch (`${req.method} ${url.pathname}`) {
       case `GET ${PRM_PATH}`:
       case "GET /.well-known/oauth-protected-resource":
         return json(200, { ...protectedResourceMetadata(), resource: state.urls.resource, authorization_servers: [issuer], ...options.prm });
-      case `GET ${issuerPath}/.well-known/oauth-authorization-server`:
+      case `GET ${asPath}`:
       case "GET /.well-known/oauth-authorization-server":
         return json(200, asDoc);
       case "GET /healthz":
@@ -166,10 +167,29 @@ test("a live check that fails exits 1: wrong metadata resource, and an open /mcp
   assert.strictEqual(wrong.status["as-metadata"], "skip", "nothing to follow");
   assert.match(wrong.out, /^FAILED: /m);
 
+  const basic = await smoke(await production(t, { challenge: "Basic realm=\"mcp\"" }));
+  assert.strictEqual(basic.code, 1);
+  assert.match(basic.out, /FAIL mcp-get-401: .*WWW-Authenticate is not a Bearer-scheme challenge;/);
+
   const open = await smoke(await production(t, { mcpOpen: true }));
   assert.strictEqual(open.code, 1);
   assert.match(open.out, /FAIL mcp-get-401: GET \/mcp 200 WWW-Authenticate: \(none\) \(expected 401; /);
   assert.strictEqual(open.status["mcp-post-401"], "fail");
+});
+
+test("authorization server metadata: only the RFC 8414 path-inserted URL passes as-metadata, and its issuer must be the one the metadata named", async (t) => {
+  const ok = await smoke(await production(t));
+  assert.match(ok.out, /PASS as-metadata: GET https:\/\/cloud\.blowhorn\.ai\/\.well-known\/oauth-authorization-server\/hydra 200/);
+
+  const appended = await smoke(await production(t, { asAppended: true }));
+  assert.strictEqual(appended.code, 1);
+  assert.match(appended.out, /FAIL as-metadata: GET https:\/\/cloud\.blowhorn\.ai\/\.well-known\/oauth-authorization-server\/hydra 404/);
+
+  const other = await smoke(await production(t, { asIssuer: "https://elsewhere.example/hydra" }));
+  assert.strictEqual(other.code, 1);
+  assert.strictEqual(other.status["as-metadata"], "fail");
+  assert.strictEqual(other.status["as-metadata-root"], "fail");
+  assert.match(other.out, /FAIL as-metadata: .*issuer https:\/\/elsewhere\.example\/hydra is not https:\/\/cloud\.blowhorn\.ai\/hydra/);
 });
 
 test("with every token: SDK initialize at 2025-11-25, the six read tools, a read call, the legacy path labeled, wrong audience refused, no token printed", async (t) => {
@@ -224,7 +244,7 @@ test("CLI: --base points every check at that origin, follows the issuer its meta
   mock.state.urls = { origin, resource: `${origin}/mcp`, prm: `${origin}${PRM_PATH}`, issuer: `${origin}/auth`, issuerPath: "/auth", registration: `${origin}/oauth2/register` };
   const env = { ...process.env, ...NO_TOKENS };
   const ok = await promisify(execFile)(process.execPath, [SCRIPT, "--base", origin], { env });
-  assert.match(ok.stdout, new RegExp(`PASS as-metadata: GET ${origin}/auth/\\.well-known/oauth-authorization-server 200`));
+  assert.match(ok.stdout, new RegExp(`PASS as-metadata: GET ${origin}/\\.well-known/oauth-authorization-server/auth 200`));
   assert.match(ok.stdout, /^OK: 9 pass, 0 fail, 4 skip$/m);
 
   mock.state.urls.prm = "https://elsewhere.example/prm";

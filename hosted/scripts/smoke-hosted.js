@@ -172,7 +172,7 @@ export async function checkProtectedResource(ctx) {
   return docs[0].authorization_servers[0];
 }
 
-/** GET the issuer's RFC 8414 metadata (issuer path and origin root); returns registration_endpoint. */
+/** GET the issuer's RFC 8414 metadata (path-inserted and origin root); returns registration_endpoint. */
 export async function checkAuthorizationServer(ctx, issuer) {
   const { fetch, report } = ctx;
   if (!issuer) {
@@ -180,9 +180,10 @@ export async function checkAuthorizationServer(ctx, issuer) {
     return undefined;
   }
   const wantRegistration = issuer === AUTHORIZATION_SERVER ? `${DEFAULT_BASE}/oauth2/register` : undefined;
+  const { origin, pathname } = new URL(issuer);
   const urls = [
-    ["as-metadata", `${issuer.replace(/\/+$/, "")}/.well-known/oauth-authorization-server`],
-    ["as-metadata-root", `${new URL(issuer).origin}/.well-known/oauth-authorization-server`],
+    ["as-metadata", `${origin}/.well-known/oauth-authorization-server${pathname.replace(/\/+$/, "")}`],
+    ["as-metadata-root", `${origin}/.well-known/oauth-authorization-server`],
   ];
   let registration;
   for (const [name, url] of urls) {
@@ -194,9 +195,10 @@ export async function checkAuthorizationServer(ctx, issuer) {
     else {
       const parsed = OAuthMetadataSchema.safeParse(doc);
       if (!parsed.success) problems.push(`schema: ${zodErrors(parsed)}`);
+      if (doc.issuer !== issuer) problems.push(`issuer ${doc.issuer} is not ${issuer}`);
       if (!doc.registration_endpoint) problems.push("no registration_endpoint");
       else if (wantRegistration && doc.registration_endpoint !== wantRegistration) problems.push(`registration_endpoint is not ${wantRegistration}`);
-      else if (registration && doc.registration_endpoint !== registration) problems.push("registration_endpoint differs from the issuer path's");
+      else if (registration && doc.registration_endpoint !== registration) problems.push("registration_endpoint differs from the path-inserted document's");
     }
     const detail = `GET ${url} ${res.status}${doc?.registration_endpoint ? ` registration_endpoint=${doc.registration_endpoint}` : ""}`;
     if (problems.length) report.fail(name, `${detail} (${problems.join("; ")})`);
@@ -240,7 +242,7 @@ export async function checkUnauthenticated(ctx) {
     const challenge = res.headers.get("WWW-Authenticate") || "";
     const problems = [];
     if (res.status !== 401) problems.push("expected 401");
-    if (!/^Bearer\b/i.test(challenge)) problems.push("WWW-Authenticate is not a Bearer challenge");
+    if (!/^Bearer\b/i.test(challenge)) problems.push("WWW-Authenticate is not a Bearer-scheme challenge");
     if (!challenge.includes(wantMetadata)) problems.push(`WWW-Authenticate lacks ${wantMetadata}`);
     const detail = `${label} ${res.status} WWW-Authenticate: ${challenge || "(none)"}`;
     if (problems.length) report.fail(name, `${detail} (${problems.join("; ")})`);

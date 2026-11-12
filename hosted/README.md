@@ -523,7 +523,7 @@ any failure:
 | Check | Expects |
 |-------|---------|
 | `prm`, `prm-root`, `prm-same` | Both metadata paths `200`, the same document, valid against `schemas/protected-resource.schema.json`, `resource` `<base>/mcp` (for production also `authorization_servers` `[https://cloud.blowhorn.ai/hydra]`) |
-| `as-metadata`, `as-metadata-root` | The issuer's `/.well-known/oauth-authorization-server` (issuer path and origin root) `200`, valid against the SDK's RFC 8414 schema, with a `registration_endpoint` (for production `https://cloud.blowhorn.ai/oauth2/register`) |
+| `as-metadata`, `as-metadata-root` | The issuer's RFC 8414 metadata at the path-inserted URL (`<origin>/.well-known/oauth-authorization-server/<issuer path>`) and at the origin root: `200`, valid against the SDK's RFC 8414 schema, `issuer` equal to the issuer the protected resource metadata names, with a `registration_endpoint` (for production `https://cloud.blowhorn.ai/oauth2/register`) |
 | `healthz` | `200` |
 | `mcp-get-401`, `mcp-post-401` | `GET /mcp` and `POST /mcp` `initialize` with no token: `401` and a Bearer challenge with `resource_metadata="<base>/.well-known/oauth-protected-resource/mcp"` |
 | `dcr`, `dcr-cleanup` | Registration of a public native client with a loopback redirect: `201`, a `client_id`, `token_endpoint_auth_method` `none` and no `client_secret`; then an RFC 7592 delete if the answer offers one |
