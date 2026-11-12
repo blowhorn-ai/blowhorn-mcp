@@ -16,7 +16,8 @@ this repo is about.
 > waiting on Cloud accepting tokens whose audience is
 > `https://mcp.blowhorn.ai/mcp` when the Worker forwards them. Bearer
 > Cloud API tokens keep working. See [Before cutover](#before-cutover) and
-> [Tests](#tests).
+> [Tests](#tests). After a release, run `make hosted-smoke` (see
+> [Post-release smoke](#post-release-smoke)).
 
 ## What it does
 
@@ -200,11 +201,15 @@ do not merge this change before.** The Worker does not enforce any of it.
    allowlist and address limit. Closing that (a secret header checked at
    Cloud's edge, or mTLS) is a follow-up, not part of the OAuth argument.
 
-After cutover, also: the deploy smoke test only checks `401` on an
-unauthenticated `/mcp`; extend it to expect `resource_metadata=` in
-`WWW-Authenticate` and `resource` in the metadata (a workflow change, so a
-separate approval), and have a person sign in with a real MCP client against
-production.
+After cutover, also: the deploy workflow's smoke test only checks `401` on an
+unauthenticated `/mcp`. The fuller check, `resource_metadata=` in
+`WWW-Authenticate`, `resource` in the metadata, registration and, with a
+token, the signed-in path, is the opt-in `make hosted-smoke`
+([Post-release smoke](#post-release-smoke)); run it after every release.
+Moving any of it into the workflow is a workflow change, so a separate
+approval. Have a person sign in with a real MCP client against production
+too: the smoke's signed-in checks have not yet run in production, because no
+test token exists.
 
 ## Rate limits
 
@@ -414,6 +419,8 @@ which resolves `cloudflare:workers` to the DurableObject stub in
 | `test/ratelimit.test.js` | Both Durable Object limits, their config and README tables, the fail-closed paths |
 | `test/errors.test.js`, `test/vendor.test.js` | The error registry with its tombstones, and the vendored schema pin |
 | `test/require-node.test.js` | The deploy's Node check |
+| `test/smoke-hosted.test.js` | The logic of `scripts/smoke-hosted.js` against a local mock server: metadata schema and `resource`, the 401 challenge, registration `201`, skip and exit 0 without tokens, exit 1 on a failed check, no secret in the output |
+| `scripts/smoke-hosted.js` | **Opt-in live smoke against the deployed origin**, not a fake-upstream contract test and not run by `make hosted-check` or CI. See [Post-release smoke](#post-release-smoke) |
 
 **`test/oauth-contract.test.js` is a fake-upstream contract test.** Its Cloud is
 a small fake (`test/support/harness.js`) that implements the contract in
@@ -437,7 +444,7 @@ with a real client, must pass before any cutover.
 | `schemas/rate-limits.schema.json` | The `RATE_LIMITS` config shape |
 | `schemas/vendor/` | The ErrorDefinition construct, byte for byte, pinned in `SOURCES.json` (`make hosted-schemas-refresh`) |
 | `errors/mcp.json` | The error code registry |
-| `scripts/` | check-drift, registry (the error registry check), vendor (the vendor check), schemas-refresh, require-node (the deploy's Node check) |
+| `scripts/` | check-drift, registry (the error registry check), vendor (the vendor check), schemas-refresh, require-node (the deploy's Node check), smoke-hosted (the opt-in live smoke) |
 | `test/` | Behavior tests, above |
 | `wrangler.jsonc` | Worker config, the rate limits included |
 | `.nvmrc` | The Node major the deploy needs (22) |
@@ -455,8 +462,10 @@ with a real client, must pass before any cutover.
 CI deploys on every push to `master` that touches `hosted/**`
 (`.github/workflows/hosted-deploy.yml`, `production` environment), runs
 `make hosted-deploy`, then smoke-tests `/healthz` (200) and unauthenticated
-`/mcp` (401). The smoke test does not yet check the challenge's
-`resource_metadata` or the metadata document; see [Before cutover](#before-cutover). It can also be run by hand with workflow_dispatch. The manual
+`/mcp` (401). That narrow smoke test does not check the challenge's
+`resource_metadata` or the metadata document; see [Before cutover](#before-cutover).
+After the deploy, run the fuller [Post-release smoke](#post-release-smoke) by
+hand. The workflow can also be run by hand with workflow_dispatch. The manual
 path below still works.
 
 From the VM only, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
@@ -492,3 +501,56 @@ Node versions are split:
 
 `wrangler.jsonc` has no routes; the `mcp.blowhorn.ai` custom domain is
 attached through the Cloudflare API. `workers_dev` and preview URLs are off.
+
+### Post-release smoke
+
+After every deploy or release, run the opt-in live smoke against the deployed
+origin. It contacts the real `https://mcp.blowhorn.ai` and the authorization
+server its metadata names; it is not a fake-upstream contract test, and
+`make check`, `make hosted-check` and CI never run it.
+
+```bash
+make hosted-smoke                                # or: npm run smoke:hosted --prefix hosted
+SMOKE_HOSTED_BASE=https://staging.example make hosted-smoke
+node hosted/scripts/smoke-hosted.js --base https://staging.example
+```
+
+Every request sends `User-Agent: blowhorn-verify/1.0` (a default one can
+draw a Cloudflare 1010 challenge) and follows no redirect. It prints one
+`PASS`, `FAIL` or `SKIP` line per check with the HTTP status, and exits 1 on
+any failure:
+
+| Check | Expects |
+|-------|---------|
+| `prm`, `prm-root`, `prm-same` | Both metadata paths `200`, the same document, valid against `schemas/protected-resource.schema.json`, `resource` `<base>/mcp` (for production also `authorization_servers` `[https://cloud.blowhorn.ai/hydra]`) |
+| `as-metadata`, `as-metadata-root` | The issuer's RFC 8414 metadata at the path-inserted URL (`<origin>/.well-known/oauth-authorization-server/<issuer path>`) and at the origin root: `200`, valid against the SDK's RFC 8414 schema, `issuer` equal to the issuer the protected resource metadata names, with a `registration_endpoint` (for production `https://cloud.blowhorn.ai/oauth2/register`) |
+| `healthz` | `200` |
+| `mcp-get-401`, `mcp-post-401` | `GET /mcp` and `POST /mcp` `initialize` with no token: `401` and a Bearer challenge with `resource_metadata="<base>/.well-known/oauth-protected-resource/mcp"` |
+| `dcr`, `dcr-cleanup` | Registration of a public native client with a loopback redirect: `201`, a `client_id`, `token_endpoint_auth_method` `none` and no `client_secret`; then an RFC 7592 delete if the answer offers one |
+| `mcp-token-*` | With a token: the official SDK client's `initialize` negotiates `2025-11-25`, `tools/list` is exactly the six read tools (`listContentItems`, `getContentItem`, `getEvents`, `getConnections`, `listSchedules`, `getScheduleById`), and one read `tools/call` succeeds |
+| `cloud-token-*` | The same through a legacy Cloud API token, labeled as that path |
+| `wrong-audience` | A token for another audience is refused with `401` |
+
+| Variable | Meaning |
+|----------|---------|
+| `SMOKE_HOSTED_BASE` | Origin to test (or `--base`); default `https://mcp.blowhorn.ai`. Discovery follows the issuer its metadata names |
+| `SMOKE_HOSTED_TOKEN` or `BLOWHORN_MCP_TOKEN` | MCP OAuth user token bound to audience `<base>/mcp`; runs `mcp-token-*` |
+| `BLOWHORN_CLOUD_TOKEN` | Legacy Cloud API token; runs `cloud-token-*` |
+| `SMOKE_HOSTED_WRONG_AUD_TOKEN` | A real token minted for another audience; runs `wrong-audience` |
+| `SMOKE_HOSTED_ORGANIZATION_ID` or `BLOWHORN_CLOUD_ORGANIZATION` | `organizationId` for the read `tools/call`; without it only the call is skipped |
+
+Tokens are read from the environment only. Each signed-in check whose token
+is unset is skipped with the variable it needs, and the run still exits 0 if
+everything else passed. Nothing prints a token, a `client_secret` or a
+`registration_access_token`: every line is redacted of them.
+
+**Each run may leave one OAuth client in Cloud.** Cloud's registration
+answer has no `registration_client_uri` or `registration_access_token`, so
+the RFC 7592 delete is not available and `dcr-cleanup` says so (the script
+deletes the client if those fields ever appear). Every client it registers is
+named `blowhorn-mcp-hosted-smoke <UTC time>`, so they can be found and removed
+in Cloud.
+
+The signed-in checks have not run against production yet: no test token
+exists. Without one, the smoke proves discovery, the challenge and
+registration only.

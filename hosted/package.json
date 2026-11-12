@@ -11,6 +11,7 @@
   },
   "scripts": {
     "check-drift": "node scripts/check-drift.js",
+    "smoke:hosted": "node scripts/smoke-hosted.js",
     "test": "node --import ./test/support/register.js --test test/*.test.js"
   },
   "devDependencies": {
