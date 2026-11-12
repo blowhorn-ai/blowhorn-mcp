@@ -54,6 +54,26 @@ async function mcpAnswer(req, res, body, tools) {
   await transport.handleRequest(req, res, body);
 }
 
+/** GET /api/auth/flow as live Cloud answers it: the Kratos flow wrapped in `flow`, beside `org` and `config`. */
+const cloudFlow = () => ({
+  flow: {
+    id: "cloud-flow-1",
+    action: "/api/auth/flow/submit?id=cloud-flow-1&type=login",
+    method: "POST",
+    nodes: [
+      { type: "input", group: "default", attributes: { name: "csrf_token", type: "hidden", value: CSRF }, messages: [] },
+      { type: "input", group: "default", attributes: { name: "identifier", type: "text", required: true }, messages: [] },
+      { type: "input", group: "password", attributes: { name: "password", type: "password", required: true }, messages: [] },
+      { type: "input", group: "password", attributes: { name: "method", type: "submit", value: "password" }, messages: [] },
+      { type: "input", group: "oidc", attributes: { name: "provider", type: "submit", value: "google" }, messages: [] },
+      { type: "input", group: "oidc", attributes: { name: "provider", type: "submit", value: "github" }, messages: [] },
+    ],
+    messages: null,
+  },
+  org: { id: "org-cloud-1", name: "Blowhorn Service", hostResolved: true },
+  config: { registrationEnabled: false },
+});
+
 /**
  * A mock of the deployed origin and the authorization server. `prm` and
  * `issuer` are what the metadata names; options break one thing at a time.
@@ -61,7 +81,9 @@ async function mcpAnswer(req, res, body, tools) {
  * a login_challenge, the Cloud-brokered flow API signs in (or, with
  * `unverified`, redirects to /verification), then /consent answers as
  * `consent` says: "form" (a plain HTML form), "widget" (a JavaScript page)
- * or "cloudflare" (a 1010 block).
+ * or "cloudflare" (a 1010 block). `flowShape` picks the GET /api/auth/flow
+ * answer: "kratos" (default, a raw Kratos flow), "cloud" (the wrapper live
+ * Cloud answers with) or "unknown" (a 200 with no flow id).
  */
 async function mockOrigin(t, options = {}) {
   const seen = [];
@@ -100,6 +122,8 @@ async function mockOrigin(t, options = {}) {
       }
       case "GET /api/auth/flow":
         state.flowQuery = url.searchParams;
+        if (options.flowShape === "unknown") return json(200, { status: "ok", data: { csrf_token: CSRF } });
+        if (options.flowShape === "cloud") return json(200, cloudFlow(), { "Set-Cookie": `csrf_token_1=${CSRF_COOKIE}; Path=/; HttpOnly` });
         return json(200, { id: "flow-1", ui: { nodes: [{ group: "default", attributes: { name: "csrf_token", type: "hidden", value: CSRF } }, { group: "password", attributes: { name: "identifier", type: "text" } }] } }, { "Set-Cookie": `csrf_token_1=${CSRF_COOKIE}; Path=/; HttpOnly` });
       case "POST /api/auth/flow/submit":
         state.login = { query: url.searchParams, form: new URLSearchParams(text), cookie };
@@ -338,6 +362,31 @@ test("test account unverified: the login redirect to /verification skips the sig
   assert.strictEqual(mock.state.flowQuery.get("type"), "login");
   assert.strictEqual(mock.state.flowQuery.get("login_challenge"), "login-1");
   for (const secret of [PASSWORD, CSRF, CSRF_COOKIE]) assert.ok(!out.includes(secret), "no password, csrf or cookie in the output");
+});
+
+test("test account against live Cloud's flow wrapper: the flow id, csrf and action come from flow.*, the unverified login skips, exit 0, no secret printed", async (t) => {
+  const mock = await production(t, { unverified: true, flowShape: "cloud" });
+  const { code, status, out } = await smoke(mock, ACCOUNT);
+  assert.strictEqual(code, 0, out);
+  assert.strictEqual(status["user-login"], "skip", out);
+  assert.match(out, /SKIP user-login: POST https:\/\/cloud\.blowhorn\.ai\/api\/auth\/flow\/submit\?type=login 303 Location: https:\/\/cloud\.blowhorn\.ai\/verification: email verification is required for BLOWHORN_MCP_TEST_EMAIL=smoke-account@example\.test\./);
+  assert.ok(!out.includes("FAIL"), out);
+  assert.ok(!Object.keys(status).some((n) => n.startsWith("user-token-")), "no signed-in check ran");
+  const login = mock.state.login;
+  assert.deepStrictEqual(Object.fromEntries(login.query), { id: "cloud-flow-1", type: "login" });
+  assert.deepStrictEqual(Object.fromEntries(login.form), { identifier: EMAIL, password: PASSWORD, method: "password", csrf_token: CSRF });
+  assert.ok(login.cookie.includes(`csrf_token_1=${CSRF_COOKIE}`), "the flow's cookies are forwarded");
+  for (const secret of [PASSWORD, CSRF, CSRF_COOKIE]) assert.ok(!out.includes(secret), "no password, csrf or cookie in the output");
+});
+
+test("test account: a 200 flow answer with no flow id fails naming its top-level keys, never its body", async (t) => {
+  const mock = await production(t, { flowShape: "unknown" });
+  const { code, status, out } = await smoke(mock, ACCOUNT);
+  assert.strictEqual(code, 1, out);
+  assert.strictEqual(status["user-login"], "fail", out);
+  assert.match(out, /FAIL user-login: GET https:\/\/cloud\.blowhorn\.ai\/api\/auth\/flow\?type=login 200 \(expected 200 and a login flow id at flow\.id or id; top-level keys: status,data\)/);
+  assert.strictEqual(mock.state.login, undefined, "the password was never submitted");
+  for (const secret of [PASSWORD, CSRF]) assert.ok(!out.includes(secret));
 });
 
 test("test account verified: authorization code + PKCE through login and a plain consent form, code exchanged with the verifier, then initialize and the tools, no secret printed", async (t) => {

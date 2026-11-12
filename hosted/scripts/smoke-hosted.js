@@ -451,9 +451,31 @@ export function consentForm(html, pageUrl) {
   return undefined;
 }
 
+/**
+ * A login flow document in either shape: Cloud's wrapper (`{ flow: { id,
+ * action, nodes, messages }, org, config }`) or a raw Kratos flow (`{ id,
+ * ui: { action, nodes, messages } }`). Missing parts are empty.
+ */
+export function loginFlow(doc) {
+  const raw = doc?.flow && typeof doc.flow === "object" ? doc.flow : doc;
+  const ui = raw?.ui && typeof raw.ui === "object" ? raw.ui : raw;
+  return {
+    id: typeof raw?.id === "string" && raw.id ? raw.id : undefined,
+    action: typeof raw?.action === "string" && raw.action ? raw.action : typeof ui?.action === "string" && ui.action ? ui.action : undefined,
+    nodes: Array.isArray(ui?.nodes) ? ui.nodes : [],
+    messages: Array.isArray(ui?.messages) ? ui.messages : [],
+  };
+}
+
 /** Kratos UI message texts, for a login that was refused. */
 function uiMessages(doc) {
-  return [...(doc?.ui?.messages ?? []), ...(doc?.ui?.nodes ?? []).flatMap((n) => n.messages ?? [])].map((m) => m.text ?? m.id).filter(Boolean);
+  const { nodes, messages } = loginFlow(doc);
+  return [...messages, ...nodes.flatMap((n) => n.messages ?? [])].map((m) => m?.text ?? m?.id).filter(Boolean);
+}
+
+/** The JSON body's top-level keys, for a fail message that must not print the body. */
+function topKeys(doc) {
+  return doc && typeof doc === "object" && !Array.isArray(doc) ? Object.keys(doc).join(",") || "(none)" : "(not a JSON object)";
 }
 
 /** The Cloud-brokered password login. Returns the URL to continue at, or undefined after reporting why not. */
@@ -473,11 +495,13 @@ async function signIn(ctx, jar, flow, loginUrl) {
   try {
     doc = JSON.parse(text);
   } catch {}
-  if (res.status !== 200 || !doc?.id) {
-    report.fail("user-login", `GET ${flowUrl.origin}${flowUrl.pathname}?type=login ${res.status} (expected 200 and a login flow id)`);
+  const login = loginFlow(doc);
+  if (res.status !== 200 || !login.id) {
+    const keys = res.status === 200 ? `; top-level keys: ${topKeys(doc)}` : "";
+    report.fail("user-login", `GET ${flowUrl.origin}${flowUrl.pathname}?type=login ${res.status} (expected 200 and a login flow id at flow.id or id${keys})`);
     return undefined;
   }
-  const nodes = doc.ui?.nodes ?? [];
+  const { nodes } = login;
   const csrf = nodes.find((n) => n.attributes?.name === "csrf_token")?.attributes?.value ?? doc.csrf_token;
   if (csrf) secrets.add(csrf);
   if (nodes.some((n) => n.group === "captcha" || /captcha|turnstile/i.test(n.attributes?.name ?? ""))) {
@@ -485,9 +509,14 @@ async function signIn(ctx, jar, flow, loginUrl) {
     return undefined;
   }
 
-  const submit = new URL("/api/auth/flow/submit", flow.origin);
-  submit.searchParams.set("id", doc.id);
-  submit.searchParams.set("type", "login");
+  // The flow's own action when it names one, else the documented submit path; either way only on the pinned origin.
+  const submit = new URL(login.action ?? "/api/auth/flow/submit", flow.origin);
+  if (submit.origin !== flow.origin) {
+    report.skip("user-login", `the login flow's action is at ${submit.origin}, off ${flow.origin}, and is not submitted; the test account is only sent to ${flow.origin}`);
+    return undefined;
+  }
+  if (!submit.searchParams.has("id")) submit.searchParams.set("id", login.id);
+  if (!submit.searchParams.has("type")) submit.searchParams.set("type", "login");
   const form = new URLSearchParams({ identifier: flow.email.value, password: flow.password.value, method: "password" });
   if (csrf) form.set("csrf_token", csrf);
   const sub = await jar.fetch(submit, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" }, body: form.toString() });
@@ -496,7 +525,8 @@ async function signIn(ctx, jar, flow, loginUrl) {
   try {
     answer = JSON.parse(subText);
   } catch {}
-  const location = sub.headers.get("location") ?? answer?.redirect_browser_to;
+  const location = sub.headers.get("location") ?? answer?.redirect_browser_to ?? answer?.flow?.redirect_browser_to;
+  const errorId = answer?.error?.id ?? answer?.flow?.error?.id;
   const next = location ? new URL(location, submit) : undefined;
   const detail = `POST ${submit.origin}${submit.pathname}?type=login ${sub.status}${next ? ` Location: ${next.origin}${next.pathname}` : ""}`;
   const messages = uiMessages(answer);
@@ -504,7 +534,7 @@ async function signIn(ctx, jar, flow, loginUrl) {
     report.skip("user-login", `${detail} is a Cloudflare challenge; ${personStep(flow)}`);
     return undefined;
   }
-  if (next?.pathname.startsWith("/verification") || answer?.error?.id === "session_verified_address_required" || messages.some((m) => /not (been )?verified|verif(y|ication) (your|the) (email|address)/i.test(m))) {
+  if (next?.pathname.startsWith("/verification") || errorId === "session_verified_address_required" || messages.some((m) => /not (been )?verified|verif(y|ication) (your|the) (email|address)/i.test(m))) {
     report.skip("user-login", `${detail}: email verification is required for ${flow.email.name}=${flow.email.value}. A person who can read that inbox must open the verification link Cloud sent to it, then re-run the smoke; the signed-in user-token checks are skipped until then`);
     return undefined;
   }
