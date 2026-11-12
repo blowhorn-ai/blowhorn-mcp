@@ -18,7 +18,8 @@ this repo is about.
 ## What it does
 
 Clients connect at `https://mcp.blowhorn.ai/mcp`. The Worker is a transport
-proxy: it carries each MCP request to Cloud's `/mcp` and Cloud's answer back.
+proxy: it carries MCP requests to Cloud's `/mcp` and Cloud's answer back,
+except a `GET` with no usable Bearer token, which is answered here (see the route table).
 It is not an MCP server, not an OAuth authorization server, and not a token
 gateway. It does not read, check, mint, exchange or store a credential, and it
 never forwards one to a REST API.
@@ -65,11 +66,11 @@ What crosses the Worker, both ways, is filtered by an allowlist:
 - **Redirects** from Cloud are never followed and never passed on: the Worker
   answers `502` (`blowhorn-mcp-1013`).
 - **Unauthenticated GET.** A `GET /mcp` with no usable Bearer token is answered
-  here with the same `401` and `WWW-Authenticate` challenge an unauthenticated
-  request already gets (`Bearer token required`), and Cloud is not called. A
-  browser `Accept: text/html` therefore does not become a `502`
-  (`blowhorn-mcp-1013`). A GET that carries a usable Bearer token, and every
-  POST and DELETE, are still forwarded.
+  here with `401` and the public `WWW-Authenticate` Bearer challenge
+  (`resource_metadata` for this origin; see [Before cutover](#before-cutover)),
+  and Cloud is not called. A browser `Accept: text/html` therefore does not
+  become a `502` (`blowhorn-mcp-1013`). A GET that carries a usable Bearer
+  token, and every POST and DELETE, are still forwarded.
 - **Bodies.** An answer is streamed to the client as it arrives, never
   buffered, and the 20 s timeout covers only the status and headers, so a
   long-lived event stream is not cut. A request body is read once, bounded at

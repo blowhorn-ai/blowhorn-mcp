@@ -50,7 +50,7 @@ jobs:
           }
           base=https://mcp.blowhorn.ai
           expect 200 "$base/healthz"
-          # GET /mcp is refused before auth with 405 (no SSE stream); never 5xx.
+          # Unauthenticated GET /mcp is answered here with the 401 challenge; never 5xx.
           expect '401|405' "$base/mcp"
           expect 401 -X POST -H 'content-type: application/json' \
             -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}' "$base/mcp"

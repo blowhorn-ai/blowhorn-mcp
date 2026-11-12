@@ -157,8 +157,8 @@ async function mcp(request, env, origin) {
   }
   // A browser GET sends Accept: text/html and no token. Cloud answers that
   // with a login redirect, which this gateway refuses (502, blowhorn-mcp-1013).
-  // Answer the same 401 challenge the unauthenticated case already returns,
-  // and do not call Cloud. A usable Bearer token, and POST and DELETE, still go.
+  // Answer 401 with the public Bearer challenge and do not call Cloud. A
+  // usable Bearer token, and POST and DELETE, still go.
   if (request.method === "GET" && !bearerToken(request.headers.get("Authorization"))) {
     return json(
       401,
