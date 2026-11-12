@@ -28,9 +28,11 @@ Notes for coding agents working in this repo.
   its own package, until Cloud serves `/mcp` itself
   (blowhorn-ai/blowhorn#1509, U3); then it is retired. The Worker and Cloud's
   `/mcp` are ONE protected resource, `https://mcp.blowhorn.ai/mcp`: the
-  Worker carries MCP requests to Cloud's `/mcp` and the answers back,
-  and Cloud owns the canonical resource, the 401 challenge, the protected
-  resource metadata, the authorization server, the tokens and the tools.
+  Worker carries MCP requests to Cloud's `/mcp` and the answers back.
+  An unauthenticated GET /mcp (no usable Bearer token) is answered here
+  with the 401 challenge and is not forwarded. Cloud owns the canonical
+  resource, token validation, the protected resource metadata, the
+  authorization server, the tokens and the tools.
   Never make the Worker an MCP server, an authorization server, a token
   validator or a REST gateway, and never forward a token to a REST API. The
   upstream URL is a constant, never built from the inbound request; only the
