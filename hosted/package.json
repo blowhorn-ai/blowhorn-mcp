@@ -15,7 +15,7 @@
     "test": "node --import ./test/support/register.js --test test/*.test.js"
   },
   "devDependencies": {
-    "@cfworker/json-schema": "4.1.4",
+    "@cfworker/json-schema": "4.1.6",
     "@modelcontextprotocol/sdk": "1.32.2",
     "wrangler": "4.157.0"
   }
