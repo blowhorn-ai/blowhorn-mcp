@@ -92,9 +92,10 @@ function outputs(listing, pkg) {
       ],
     },
 
-    // Cursor plugin. Cursor interpolates ${userHome} in mcp.json; it does not expand ${HOME}.
-    // The manifest names mcp.json explicitly, so Cursor never falls back to
-    // .mcp.json, the Claude Code plugin's ${HOME} config at the same root.
+    // Cursor plugin. Cursor interpolates ${userHome} in .cursor-plugin/mcp.json
+    // and leaves ${HOME} unexpanded. The manifest names that file, so Cursor
+    // reads neither .mcp.json (Claude Code, ${HOME}) nor root mcp.json
+    // (Agent Plugins). Cursor's documented form has no $schema and no "type".
     ".cursor-plugin/plugin.json": {
       name: listing.slug,
       description: listing.shortDescription,
@@ -105,10 +106,56 @@ function outputs(listing, pkg) {
       license,
       keywords: listing.keywords,
       logo: listing.logo.svg,
-      mcpServers: "./mcp.json",
+      mcpServers: "./.cursor-plugin/mcp.json",
     },
-    "mcp.json": {
+    ".cursor-plugin/mcp.json": {
       mcpServers: { [listing.slug]: listing.commands.cursorPlugin },
+    },
+
+    // Agent Plugins 1.0 MCP config, which GitHub Copilot CLI reads from the
+    // plugin root. $schema and "type": "stdio" are required there. The command
+    // is a bare "node" with ${PLUGIN_ROOT} only in args (Agent Plugins 1.0
+    // sections 7.2.1 and 9.2), the same idea as the Gemini extension: node
+    // runs this repo's launcher, which execs ~/.local/bin/blowhorn-mcp.
+    "mcp.json": {
+      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      mcpServers: { [listing.slug]: { type: "stdio", ...listing.commands.copilotPlugin } },
+    },
+
+    // Agent Plugins 1.0, which GitHub Copilot CLI installs. plugin.json at the
+    // repo root takes precedence over .claude-plugin/plugin.json. Skills stay
+    // at skills/<name>/SKILL.md. No agents, hooks, or other Copilot-only components.
+    "plugin.json": {
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      name: listing.slug,
+      version,
+      description: listing.shortDescription,
+      author,
+      homepage: docs,
+      repository,
+      license,
+      keywords: listing.keywords,
+    },
+    // Copilot CLI marketplace, separate from .claude-plugin/marketplace.json:
+    // copilot plugin marketplace add blowhorn-ai/blowhorn-mcp
+    // copilot plugin install blowhorn@blowhorn
+    ".github/plugin/marketplace.json": {
+      name: listing.slug,
+      owner: { name: listing.author.name },
+      metadata: { description: listing.shortDescription, version },
+      plugins: [
+        {
+          name: listing.slug,
+          source: "./",
+          description: listing.shortDescription,
+          version,
+          author,
+          homepage: docs,
+          repository,
+          license,
+          keywords: listing.keywords,
+        },
+      ],
     },
 
     // Gemini CLI extension; its version must equal the GitHub release tag.

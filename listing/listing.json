@@ -59,6 +59,12 @@
     "cursorPlugin": {
       "command": "${userHome}/.local/bin/blowhorn-mcp"
     },
+    "copilotPlugin": {
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/bin/blowhorn-mcp.js"
+      ]
+    },
     "geminiExtension": {
       "command": "node",
       "args": [

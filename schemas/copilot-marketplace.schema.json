@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/schemas/copilot-marketplace.schema.json",
+  "title": "GitHub Copilot CLI marketplace catalog (.github/plugin/marketplace.json)",
+  "description": "Written from https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference. GitHub publishes no JSON Schema for this catalog, so this file is local. It describes the catalog this repo writes. It is not .claude-plugin/marketplace.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "owner", "plugins"],
+  "properties": {
+    "name": { "$ref": "#/$defs/name" },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "email": { "type": "string", "format": "email" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "maxLength": 1024 },
+        "version": { "type": "string", "minLength": 1 },
+        "pluginRoot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/plugin" }
+    }
+  },
+  "$defs": {
+    "name": {
+      "description": "Kebab-case marketplace or plugin name. Dots are accepted. Max 64 characters.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?!.*(?:--|\\.\\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$"
+    },
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "source": {
+          "description": "Path to the plugin directory, relative to the repository root.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!\\.\\./)(?!/)(?![A-Za-z]:).+$"
+        },
+        "description": { "type": "string", "maxLength": 1024 },
+        "version": { "type": "string", "minLength": 1 },
+        "author": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "email": { "type": "string", "format": "email" },
+            "url": { "type": "string", "format": "uri" }
+          }
+        },
+        "homepage": { "type": "string", "format": "uri" },
+        "repository": { "type": "string", "format": "uri" },
+        "license": { "type": "string", "minLength": 1 },
+        "keywords": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

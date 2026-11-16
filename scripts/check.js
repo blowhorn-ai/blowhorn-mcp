@@ -58,7 +58,7 @@ const RULES = [
   ["no cloud.blowhorn.ai: the server runs locally", /cloud\.blowhorn\.ai/i],
   ["no Windows or Linux support claims: macOS only", /\b(Windows|Linux)\b/],
   ["no pricing", /\b(pricing|price[sd]?|per month|free trial|subscription)\b/i],
-  ["no claims of existing marketplace listings", /\b(available|listed|published|find (us|it|Blowhorn)) (on|in) (the )?(Glama|Smithery|PulseMCP|mcp\.so|Cline (MCP )?Marketplace|Cursor (Plugin )?(Marketplace|Directory)|Gemini (CLI )?Extensions? Gallery)\b/i],
+  ["no claims of existing marketplace listings", /\b(available|listed|published|find (us|it|Blowhorn)) (on|in) (the )?(Glama|Smithery|PulseMCP|mcp\.so|Cline (MCP )?Marketplace|Cursor (Plugin )?(Marketplace|Directory)|Gemini (CLI )?Extensions? Gallery|GitHub Copilot (Plugin )?(Marketplace|Directory)|Copilot (Plugin )?(Marketplace|Directory))\b/i],
 ];
 
 /**

@@ -59,9 +59,10 @@
       "properties": {
         "claudePlugin": { "$ref": "#/$defs/command" },
         "cursorPlugin": { "$ref": "#/$defs/command" },
+        "copilotPlugin": { "$ref": "#/$defs/command" },
         "geminiExtension": { "$ref": "#/$defs/command" }
       },
-      "required": ["claudePlugin", "cursorPlugin", "geminiExtension"],
+      "required": ["claudePlugin", "cursorPlugin", "copilotPlugin", "geminiExtension"],
       "additionalProperties": false
     },
     "remotes": {

@@ -35,5 +35,5 @@
     "approval"
   ],
   "logo": "assets/blowhorn-logo.svg",
-  "mcpServers": "./mcp.json"
+  "mcpServers": "./.cursor-plugin/mcp.json"
 }

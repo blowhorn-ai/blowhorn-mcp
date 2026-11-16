@@ -1,10 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/schemas/mcp-config.schema.json",
-  "title": "Plugin MCP server config (.mcp.json, mcp.json)",
-  "description": "The mcpServers file a Claude Code plugin (.mcp.json) or a Cursor plugin (mcp.json) reads from its root. Ours, because the agent-plugins.org MCP schema (https://agent-plugins.org/schemas/1.0.0/mcp.schema.json) requires a $schema member and \"type\": \"stdio\", which neither client's documented form carries, so it is not vendored here.",
+  "title": "Plugin MCP server config (.mcp.json, .cursor-plugin/mcp.json, mcp.json)",
+  "description": "The mcpServers shape shared by three generated configs. .mcp.json is Claude Code: command only, ${HOME}, no $schema and no type. .cursor-plugin/mcp.json is Cursor: command only, ${userHome} (Cursor interpolates ${userHome} and leaves ${HOME} unexpanded), no $schema and no type. mcp.json is the Agent Plugins 1.0 MCP config (GitHub Copilot CLI): $schema is https://agent-plugins.org/schemas/1.0.0/mcp.schema.json, type is stdio, command is node, and args carry ${PLUGIN_ROOT}. scripts/validate.js checks mcp.json against this schema and the vendored Agent Plugins MCP schema. It checks .mcp.json and .cursor-plugin/mcp.json against this schema only.",
   "type": "object",
   "properties": {
+    "$schema": {
+      "description": "Present on mcp.json so the file satisfies Agent Plugins 1.0. Omitted from .mcp.json and .cursor-plugin/mcp.json.",
+      "const": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+    },
     "mcpServers": {
       "type": "object",
       "minProperties": 1,

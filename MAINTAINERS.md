@@ -9,7 +9,8 @@ The same list is in `listing/listing.json`, from which `glama.json` is generated
 
 One version number, `version` in `package.json`, is the npm launcher's
 version and is copied by `make generate` into `server.json`, both Claude
-Code manifests, the Cursor plugin and `gemini-extension.json`. It is not the
+Code manifests, the Cursor plugin, `plugin.json`, the Copilot marketplace
+and `gemini-extension.json`. It is not the
 Blowhorn desktop app's version: the launcher works with any Blowhorn 1.61.0
 or later, and every MCP Registry publish pairs with an npm publish of the
 same version.
