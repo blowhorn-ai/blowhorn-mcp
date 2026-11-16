@@ -14,15 +14,17 @@ launcher's, which every listing file follows.
   forwarded and turned into `blowhorn-mcp-1013` (#38).
 - `hosted/`: `make hosted-smoke` (`npm run smoke:hosted`) is an opt-in live
   smoke of `https://mcp.blowhorn.ai`, run by hand after a release and never by
-  `make check` or CI. Its signed-in checks have not yet run in production. See
-  `hosted/README.md`, Post-release smoke.
+  `make check` or CI. See `hosted/README.md`, Post-release smoke.
 - `hosted/`: with `BLOWHORN_MCP_TEST_EMAIL` and `BLOWHORN_MCP_TEST_PASSWORD`
   set, the live smoke signs the test account in without a browser
   (authorization code + PKCE, `resource=https://mcp.blowhorn.ai/mcp`, code
   caught on the loopback redirect) and runs the signed-in checks with that
-  token. It skips, naming the step a person must do, while the account's
-  email is unverified or a hop needs a browser. Not yet run signed in against
-  production.
+  token. It reads Cloud's wrapped login flow, and when the consent page is a
+  JavaScript widget it accepts through `POST /api/identity/oauth/consent-requests/accept`.
+  It skips, naming the step a person must do, while the account's email is
+  unverified or a hop still needs a browser. When the test account is set and
+  `SMOKE_HOSTED_WRONG_AUD_TOKEN` is not, it also mints a token for another
+  audience and checks that `/mcp` refuses it.
 
 ## 1.0.2
 
