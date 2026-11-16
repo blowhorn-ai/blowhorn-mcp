@@ -10,8 +10,10 @@
  * The rules, each held by test/proxy.test.js:
  *  - The upstream URL is the constant base (cloudBase) plus the route's own
  *    path. It is never built from the inbound host, path or query.
- *  - Only the headers in REQUEST_HEADERS go to Cloud. No cookie, no
- *    forwarded host, address or protocol, no client identity, no Origin.
+ *  - Only the headers in REQUEST_HEADERS go to Cloud, plus the gateway's
+ *    own User-Agent and X-Forwarded-Mcp-Resource (always the public
+ *    resource, never a client-supplied value). No cookie, no forwarded
+ *    host, address or protocol, no client identity, no Origin.
  *  - Only the headers in RESPONSE_HEADERS come back. No Set-Cookie, no
  *    Location, no Access-Control-*: the Worker applies its own CORS.
  *  - A redirect from Cloud is never followed and never passed on: 502.
@@ -25,6 +27,10 @@ import { definition } from "./errors.js";
 export const VERSION = pkg.version;
 export const USER_AGENT = `blowhorn-mcp-hosted/${VERSION}`;
 export const DEFAULT_BASE = "https://cloud.blowhorn.ai";
+/** Public origin clients connect to (custom domain on this Worker). */
+export const PUBLIC_ORIGIN = "https://mcp.blowhorn.ai";
+/** Protected resource identifier for clients of this Worker (MCP SDK match). */
+export const PUBLIC_RESOURCE = `${PUBLIC_ORIGIN}/mcp`;
 export const TIMEOUT_MS = 20_000;
 export const MAX_REQUEST_BYTES = 1024 * 1024;
 
@@ -61,7 +67,7 @@ export function cloudBase(env = {}) {
   return ALLOWED_BASES.includes(raw) ? raw : null;
 }
 
-/** The headers to send Cloud: `names` from `inbound`, plus the gateway's own User-Agent. */
+/** The headers to send Cloud: `names` from `inbound`, plus the gateway's own User-Agent and X-Forwarded-Mcp-Resource. */
 export function forwardHeaders(inbound, names) {
   const out = new Headers();
   for (const name of names) {
@@ -69,6 +75,7 @@ export function forwardHeaders(inbound, names) {
     if (value !== null) out.set(name, value);
   }
   out.set("User-Agent", USER_AGENT);
+  out.set("X-Forwarded-Mcp-Resource", PUBLIC_RESOURCE);
   return out;
 }
 
