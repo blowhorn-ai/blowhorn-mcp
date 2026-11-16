@@ -22,8 +22,9 @@ const toolRequire = createRequire(path.join(ROOT, "tools", "package.json"));
 /**
  * Each file and the schema it must satisfy, relative to the repo root.
  * A list means every schema must accept the file. mcp.json is one of those:
- * the local config schema (shared with .mcp.json) and the vendored Agent
- * Plugins MCP schema.
+ * the local config schema (shared with .mcp.json and .cursor-plugin/mcp.json)
+ * and the vendored Agent Plugins MCP schema. The Cursor file is checked
+ * against the local schema only.
  */
 const SCHEMAS = {
   "listing/listing.json": "schemas/listing.schema.json",
@@ -32,6 +33,7 @@ const SCHEMAS = {
   ".claude-plugin/marketplace.json": "schemas/vendor/claude-code-marketplace.schema.json",
   ".mcp.json": "schemas/mcp-config.schema.json",
   ".cursor-plugin/plugin.json": "schemas/cursor-plugin.schema.json",
+  ".cursor-plugin/mcp.json": "schemas/mcp-config.schema.json",
   "mcp.json": ["schemas/mcp-config.schema.json", "schemas/vendor/agent-plugins-mcp.schema.json"],
   "plugin.json": "schemas/vendor/agent-plugins-plugin.schema.json",
   ".github/plugin/marketplace.json": "schemas/copilot-marketplace.schema.json",

@@ -3,7 +3,10 @@
   "mcpServers": {
     "blowhorn": {
       "type": "stdio",
-      "command": "${userHome}/.local/bin/blowhorn-mcp"
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/bin/blowhorn-mcp.js"
+      ]
     }
   }
 }

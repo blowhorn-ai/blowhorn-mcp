@@ -4,7 +4,7 @@ Notes for coding agents working in this repo.
 
 - **Generated files**: `server.json`, `.claude-plugin/plugin.json`,
   `.claude-plugin/marketplace.json`, `.mcp.json`, `.cursor-plugin/plugin.json`,
-  `mcp.json`, `plugin.json`, `.github/plugin/marketplace.json`,
+  `.cursor-plugin/mcp.json`, `mcp.json`, `plugin.json`, `.github/plugin/marketplace.json`,
   `gemini-extension.json` and `glama.json` are written by
   `scripts/generate.js` from `listing/listing.json` and `package.json`. Never
   edit them by hand: change the source, run `make generate`, commit both.

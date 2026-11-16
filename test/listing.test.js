@@ -23,6 +23,7 @@ function generated() {
 const OUT = generated();
 const read = (file) => JSON.parse(fs.readFileSync(path.join(OUT, file), "utf8"));
 const MANIFESTS = ["server.json", ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".cursor-plugin/plugin.json", "plugin.json", ".github/plugin/marketplace.json", "gemini-extension.json"];
+const GENERATED = [...MANIFESTS, ".mcp.json", ".cursor-plugin/mcp.json", "mcp.json", "glama.json"];
 
 /** Expand ${VAR} from `vars`; an unknown variable stays as written. */
 function expand(text, vars) {
@@ -30,7 +31,7 @@ function expand(text, vars) {
 }
 
 test("every generated file is stable 2-space JSON with a trailing newline, and validates against its schema", () => {
-  for (const file of [...MANIFESTS, ".mcp.json", "mcp.json", "glama.json"]) {
+  for (const file of GENERATED) {
     const text = fs.readFileSync(path.join(OUT, file), "utf8");
     assert.strictEqual(text, JSON.stringify(JSON.parse(text), null, 2) + "\n", file);
     assert.deepStrictEqual(validateDoc(JSON.parse(text), file), [], file);
@@ -39,7 +40,7 @@ test("every generated file is stable 2-space JSON with a trailing newline, and v
 
 test("generating twice writes the same bytes", () => {
   const again = generated();
-  for (const file of [...MANIFESTS, ".mcp.json", "mcp.json", "glama.json"]) {
+  for (const file of GENERATED) {
     assert.strictEqual(fs.readFileSync(path.join(again, file), "utf8"), fs.readFileSync(path.join(OUT, file), "utf8"), file);
   }
 });
@@ -82,8 +83,11 @@ test("every manifest's version equals the package version", () => {
 
 test("Claude Code plugin: .mcp.json's command expands to $HOME/.local/bin/blowhorn-mcp", () => {
   const home = "/Users/someone";
-  const server = read(".mcp.json").mcpServers.blowhorn;
+  const doc = read(".mcp.json");
+  assert.strictEqual(doc.$schema, undefined);
+  const server = doc.mcpServers.blowhorn;
   assert.deepStrictEqual(Object.keys(server), ["command"]);
+  assert.strictEqual(server.type, undefined);
   assert.strictEqual(expand(server.command, { HOME: home }), path.posix.join(home, ".local", "bin", "blowhorn-mcp"));
 });
 
@@ -95,15 +99,35 @@ test("Claude Code marketplace: plugin blowhorn sourced from this repo's root, na
   assert.ok(fs.existsSync(path.join(ROOT, market.plugins[0].source, ".claude-plugin", "plugin.json")));
 });
 
-test("Cursor plugin: mcp.json uses ${userHome}, which Cursor interpolates, and never ${HOME}", () => {
+test("Cursor plugin: .cursor-plugin/mcp.json uses ${userHome}, which Cursor interpolates, and never ${HOME}", () => {
+  const doc = read(".cursor-plugin/mcp.json");
+  assert.strictEqual(doc.$schema, undefined);
+  const server = doc.mcpServers.blowhorn;
+  assert.deepStrictEqual(Object.keys(server), ["command"]);
+  assert.strictEqual(server.type, undefined);
+  const raw = JSON.stringify(doc);
+  assert.ok(!raw.includes("${HOME}"), raw);
+  assert.ok(!raw.includes("${PLUGIN_ROOT}"), raw);
+  assert.ok(!raw.includes("npx"), raw);
+  assert.strictEqual(expand(server.command, { userHome: "/Users/someone" }), "/Users/someone/.local/bin/blowhorn-mcp");
+  assert.deepStrictEqual(validateDoc(doc, ".cursor-plugin/mcp.json"), []);
+});
+
+test("Agent Plugins mcp.json: node runs this repo's launcher once ${PLUGIN_ROOT} is substituted", () => {
   const doc = read("mcp.json");
-  const { command, type } = doc.mcpServers.blowhorn;
   assert.strictEqual(doc.$schema, "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json");
-  assert.strictEqual(type, "stdio");
-  assert.strictEqual(expand(command, { userHome: "/Users/someone" }), "/Users/someone/.local/bin/blowhorn-mcp");
-  assert.ok(!command.includes("${HOME}"), command);
-  assert.ok(!command.includes("${PLUGIN_ROOT}"), command);
-  assert.ok(!command.includes("npx"), command);
+  const server = doc.mcpServers.blowhorn;
+  assert.strictEqual(server.type, "stdio");
+  assert.strictEqual(server.command, "node");
+  assert.strictEqual(server.args.length, 1);
+  const raw = JSON.stringify(server);
+  assert.ok(!raw.includes("${userHome}"), raw);
+  assert.ok(!raw.includes("${HOME}"), raw);
+  const script = expand(server.args[0], { PLUGIN_ROOT: ROOT });
+  assert.strictEqual(script, path.join(ROOT, "bin", "blowhorn-mcp.js"));
+  assert.ok(fs.statSync(script).isFile());
+  const r = spawnSync(process.execPath, [script, "--launcher-version"], { encoding: "utf8" });
+  assert.strictEqual(r.stdout, `${PKG.version}\n`);
   assert.deepStrictEqual(validateDoc(doc, "mcp.json"), []);
 });
 
@@ -143,14 +167,18 @@ test("Copilot marketplace: plugin blowhorn sourced from this repo's root plugin.
   assert.strictEqual(path.posix.normalize(path.posix.join(entry.source, "plugin.json")), "plugin.json");
 });
 
-test("Cursor plugin: the manifest points at the ${userHome} mcp.json, never at .mcp.json", () => {
+test("Cursor plugin: the manifest points at the Cursor-only mcp.json, never at mcp.json or .mcp.json", () => {
   const ref = read(".cursor-plugin/plugin.json").mcpServers;
   assert.strictEqual(typeof ref, "string");
   const file = path.posix.normalize(ref);
-  assert.strictEqual(file, "mcp.json");
+  assert.strictEqual(file, ".cursor-plugin/mcp.json");
+  assert.notStrictEqual(file, "mcp.json");
   assert.notStrictEqual(file, ".mcp.json");
   const { command } = read(file).mcpServers.blowhorn;
   assert.ok(command.includes("${userHome}"), command);
+  assert.ok(!command.includes("${HOME}"), command);
+  assert.ok(!command.includes("${PLUGIN_ROOT}"), command);
+  assert.ok(!command.includes("npx"), command);
 });
 
 test("Gemini extension: node runs this repo's launcher once ${extensionPath} and ${/} are substituted", () => {

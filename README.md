@@ -81,7 +81,8 @@ In `~/.cursor/mcp.json` (Cursor interpolates `${userHome}`):
 ```
 
 This repo is also a Cursor plugin (`.cursor-plugin/plugin.json` and
-`mcp.json`), which adds the Blowhorn skill as well.
+`.cursor-plugin/mcp.json`), which adds the Blowhorn skill as well. That
+MCP file keeps `${userHome}/.local/bin/blowhorn-mcp`.
 
 ### GitHub Copilot CLI
 
@@ -95,6 +96,10 @@ copilot plugin install blowhorn@blowhorn
 
 The catalog is `.github/plugin/marketplace.json` in this repository.
 Enterprise managed settings can block the plugin.
+
+The Agent Plugins MCP config is the repo-root `mcp.json`. It starts the
+server with `node` and `${PLUGIN_ROOT}/bin/blowhorn-mcp.js`, this repo's
+launcher, which then starts `~/.local/bin/blowhorn-mcp`.
 
 To try a local checkout, run `copilot plugin install ./` from the repo
 root. Copilot CLI caches plugin components, so run that install again
@@ -162,8 +167,8 @@ All of these are reads or dry runs:
 
 ## How the launcher finds the server
 
-`bin/blowhorn-mcp.js` (the npm launcher, and the Gemini extension's command)
-uses the first of these that is present:
+`bin/blowhorn-mcp.js` (the npm launcher, the Gemini extension's command, and
+the Copilot plugin's command) uses the first of these that is present:
 
 1. `~/.local/bin/blowhorn-mcp`, the launcher the Blowhorn app writes.
 2. The engine the app recorded in
@@ -228,7 +233,8 @@ they drift.
 | `server.json` | MCP Registry entry | yes |
 | `.claude-plugin/plugin.json`, `.mcp.json` | Claude Code plugin | yes |
 | `.claude-plugin/marketplace.json` | Claude Code marketplace `blowhorn` | yes |
-| `.cursor-plugin/plugin.json`, `mcp.json` | Cursor plugin. `mcp.json` is also the Agent Plugins MCP config | yes |
+| `.cursor-plugin/plugin.json`, `.cursor-plugin/mcp.json` | Cursor plugin. The MCP config uses `${userHome}` | yes |
+| `mcp.json` | Agent Plugins 1.0 MCP config (GitHub Copilot CLI). `node` runs `${PLUGIN_ROOT}/bin/blowhorn-mcp.js` | yes |
 | `plugin.json` | Agent Plugins 1.0 manifest (GitHub Copilot CLI) | yes |
 | `.github/plugin/marketplace.json` | Copilot CLI marketplace `blowhorn` | yes |
 | `gemini-extension.json` | Gemini CLI extension | yes |
