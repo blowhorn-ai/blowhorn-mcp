@@ -18,7 +18,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { DEFAULT_BASE } from "../src/proxy.js";
 import { AUTHORIZATION_SERVER, PRM_PATH, PUBLIC_ORIGIN, protectedResourceMetadata } from "../src/metadata.js";
-import { CLIENT_NAME_PREFIX, ENV_NAMES, EXPECTED_TOOLS, REDIRECT_URI, USER_AGENT, run } from "../scripts/smoke-hosted.js";
+import { CLIENT_NAME_PREFIX, ENV_NAMES, EXPECTED_TOOLS, REDIRECT_URI, USER_AGENT, WRONG_AUDIENCE_RESOURCE, run } from "../scripts/smoke-hosted.js";
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "smoke-hosted.js");
 const GOOD = "mcp-user-token-0123456789abcdef";
@@ -31,6 +31,7 @@ const PASSWORD = "test-account-password-0123456789";
 const CSRF = "csrf-form-value-0123456789abcdef";
 const CSRF_COOKIE = "csrf-cookie-value-0123456789abcdef";
 const SESSION = "session-cookie-value-0123456789abcdef";
+const CONSENT_BINDING = "consent-binding-value-0123456789abcdef";
 const CODE = "authorization-code-0123456789abcdef";
 const USER = "pkce-user-access-token-0123456789abcdef";
 const REFRESH = "pkce-refresh-token-0123456789abcdef";
@@ -54,14 +55,38 @@ async function mcpAnswer(req, res, body, tools) {
   await transport.handleRequest(req, res, body);
 }
 
+/** GET /api/auth/flow as live Cloud answers it: the Kratos flow wrapped in `flow`, beside `org` and `config`. */
+const cloudFlow = () => ({
+  flow: {
+    id: "cloud-flow-1",
+    action: "/api/auth/flow/submit?id=cloud-flow-1&type=login",
+    method: "POST",
+    nodes: [
+      { type: "input", group: "default", attributes: { name: "csrf_token", type: "hidden", value: CSRF }, messages: [] },
+      { type: "input", group: "default", attributes: { name: "identifier", type: "text", required: true }, messages: [] },
+      { type: "input", group: "password", attributes: { name: "password", type: "password", required: true }, messages: [] },
+      { type: "input", group: "password", attributes: { name: "method", type: "submit", value: "password" }, messages: [] },
+      { type: "input", group: "oidc", attributes: { name: "provider", type: "submit", value: "google" }, messages: [] },
+      { type: "input", group: "oidc", attributes: { name: "provider", type: "submit", value: "github" }, messages: [] },
+    ],
+    messages: null,
+  },
+  org: { id: "org-cloud-1", name: "Blowhorn Service", hostResolved: true },
+  config: { registrationEnabled: false },
+});
+
 /**
  * A mock of the deployed origin and the authorization server. `prm` and
  * `issuer` are what the metadata names; options break one thing at a time.
  * The sign-in mock follows Cloud's shape: authorize redirects to /login with
  * a login_challenge, the Cloud-brokered flow API signs in (or, with
  * `unverified`, redirects to /verification), then /consent answers as
- * `consent` says: "form" (a plain HTML form), "widget" (a JavaScript page)
- * or "cloudflare" (a 1010 block).
+ * `consent` says: "form" (a plain HTML form), "widget" (a JavaScript page
+ * with no consent-request API), "api" (Cloud's widget: /consent binds a
+ * cookie and redirects to /oauth/consent, then accept answers redirectTo)
+ * or "cloudflare" (a 1010 block). `flowShape` picks the GET /api/auth/flow
+ * answer: "kratos" (default, a raw Kratos flow), "cloud" (the wrapper live
+ * Cloud answers with) or "unknown" (a 200 with no flow id).
  */
 async function mockOrigin(t, options = {}) {
   const seen = [];
@@ -96,10 +121,13 @@ async function mockOrigin(t, options = {}) {
         if (q.has("consent_verifier")) return redirect(302, `${REDIRECT_URI}?code=${CODE}&scope=openid+offline_access&state=${state.authorize.get("state")}`);
         if (q.has("login_verifier")) return signedIn ? redirect(302, `${state.urls.origin}/consent?consent_challenge=consent-1`) : json(401, { error: "no session" });
         state.authorize = q;
+        state.authorizes = [...(state.authorizes ?? []), q];
         return redirect(302, `${options.loginAt ?? state.urls.origin}/login?login_challenge=login-1`);
       }
       case "GET /api/auth/flow":
         state.flowQuery = url.searchParams;
+        if (options.flowShape === "unknown") return json(200, { status: "ok", data: { csrf_token: CSRF } });
+        if (options.flowShape === "cloud") return json(200, cloudFlow(), { "Set-Cookie": `csrf_token_1=${CSRF_COOKIE}; Path=/; HttpOnly` });
         return json(200, { id: "flow-1", ui: { nodes: [{ group: "default", attributes: { name: "csrf_token", type: "hidden", value: CSRF } }, { group: "password", attributes: { name: "identifier", type: "text" } }] } }, { "Set-Cookie": `csrf_token_1=${CSRF_COOKIE}; Path=/; HttpOnly` });
       case "POST /api/auth/flow/submit":
         state.login = { query: url.searchParams, form: new URLSearchParams(text), cookie };
@@ -109,16 +137,37 @@ async function mockOrigin(t, options = {}) {
         if (!signedIn) return json(401, { error: "no session" });
         if (options.consent === "cloudflare") return html(403, "<html><title>Access denied</title>error code: 1010</html>");
         if (options.consent === "widget") return html(200, '<html><div id="root"></div><script src="/app.js"></script></html>');
+        if (options.consent === "api") {
+          return redirect(302, `${state.urls.origin}/oauth/consent?consent_challenge=${url.searchParams.get("consent_challenge")}`, { "Set-Cookie": `oauth_consent_test=${CONSENT_BINDING}; Path=/api/identity/oauth/consent-requests; HttpOnly; Secure; SameSite=Strict` });
+        }
         return html(200, `<html><form method="post" action="/consent"><input type="hidden" name="consent_challenge" value="${url.searchParams.get("consent_challenge")}"><input type="checkbox" name="grant_scope" value="openid" checked><button type="submit" name="submit" value="deny">Deny</button><button type="submit" name="submit" value="accept">Allow</button></form></html>`);
+      case "GET /oauth/consent":
+        return html(200, '<html><div id="root"></div><script src="/app.js"></script></html>');
+      case "POST /api/identity/oauth/consent-requests/accept": {
+        let body;
+        try {
+          body = JSON.parse(text);
+        } catch {
+          return json(400, { error: "invalid body" });
+        }
+        state.consentApi = { body, cookie, query: url.searchParams };
+        if (options.consent !== "api") return json(404, { error: "not found" });
+        if (!cookie.includes(`oauth_consent_test=${CONSENT_BINDING}`)) return json(401, { error: "unauthenticated" });
+        if (body.consentChallenge !== "consent-1") return json(400, { error: "bad challenge" });
+        return json(200, { redirectTo: `${issuer}/oauth2/auth?consent_verifier=consent-verifier-1` });
+      }
       case "POST /consent":
         state.consent = new URLSearchParams(text);
         return redirect(302, `${issuer}/oauth2/auth?consent_verifier=consent-verifier-1`);
       case `POST ${issuerPath}/oauth2/token`: {
         const form = new URLSearchParams(text);
         state.token = form;
+        state.tokens = [...(state.tokens ?? []), form];
         const challenge = createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url");
         if (form.get("code") !== CODE || challenge !== state.authorize.get("code_challenge")) return json(400, { error: "invalid_grant" });
-        return json(200, { access_token: USER, token_type: "bearer", expires_in: 3600, scope: "openid offline_access", refresh_token: REFRESH });
+        const resource = form.get("resource") ?? state.authorize.get("resource");
+        const access = resource === WRONG_AUDIENCE_RESOURCE ? WRONG : USER;
+        return json(200, { access_token: access, token_type: "bearer", expires_in: 3600, scope: "openid offline_access", refresh_token: REFRESH });
       }
       case `GET ${PRM_PATH}`:
       case "GET /.well-known/oauth-protected-resource":
@@ -340,16 +389,43 @@ test("test account unverified: the login redirect to /verification skips the sig
   for (const secret of [PASSWORD, CSRF, CSRF_COOKIE]) assert.ok(!out.includes(secret), "no password, csrf or cookie in the output");
 });
 
+test("test account against live Cloud's flow wrapper: the flow id, csrf and action come from flow.*, the unverified login skips, exit 0, no secret printed", async (t) => {
+  const mock = await production(t, { unverified: true, flowShape: "cloud" });
+  const { code, status, out } = await smoke(mock, ACCOUNT);
+  assert.strictEqual(code, 0, out);
+  assert.strictEqual(status["user-login"], "skip", out);
+  assert.match(out, /SKIP user-login: POST https:\/\/cloud\.blowhorn\.ai\/api\/auth\/flow\/submit\?type=login 303 Location: https:\/\/cloud\.blowhorn\.ai\/verification: email verification is required for BLOWHORN_MCP_TEST_EMAIL=smoke-account@example\.test\./);
+  assert.ok(!out.includes("FAIL"), out);
+  assert.ok(!Object.keys(status).some((n) => n.startsWith("user-token-")), "no signed-in check ran");
+  const login = mock.state.login;
+  assert.deepStrictEqual(Object.fromEntries(login.query), { id: "cloud-flow-1", type: "login" });
+  assert.deepStrictEqual(Object.fromEntries(login.form), { identifier: EMAIL, password: PASSWORD, method: "password", csrf_token: CSRF });
+  assert.ok(login.cookie.includes(`csrf_token_1=${CSRF_COOKIE}`), "the flow's cookies are forwarded");
+  for (const secret of [PASSWORD, CSRF, CSRF_COOKIE]) assert.ok(!out.includes(secret), "no password, csrf or cookie in the output");
+});
+
+test("test account: a 200 flow answer with no flow id fails naming its top-level keys, never its body", async (t) => {
+  const mock = await production(t, { flowShape: "unknown" });
+  const { code, status, out } = await smoke(mock, ACCOUNT);
+  assert.strictEqual(code, 1, out);
+  assert.strictEqual(status["user-login"], "fail", out);
+  assert.match(out, /FAIL user-login: GET https:\/\/cloud\.blowhorn\.ai\/api\/auth\/flow\?type=login 200 \(expected 200 and a login flow id at flow\.id or id; top-level keys: status,data\)/);
+  assert.strictEqual(mock.state.login, undefined, "the password was never submitted");
+  for (const secret of [PASSWORD, CSRF]) assert.ok(!out.includes(secret));
+});
+
 test("test account verified: authorization code + PKCE through login and a plain consent form, code exchanged with the verifier, then initialize and the tools, no secret printed", async (t) => {
   const mock = await production(t, { consent: "form" });
   const { code, status, out } = await smoke(mock, { ...ACCOUNT, SMOKE_HOSTED_ORGANIZATION_ID: "org-1" });
   assert.strictEqual(code, 0, out);
-  for (const name of ["user-login", "user-consent", "user-authorize", "user-token", "user-token-initialize", "user-token-tools-list", "user-token-tools-call"]) assert.strictEqual(status[name], "pass", `${name}\n${out}`);
+  for (const name of ["user-login", "user-consent", "user-authorize", "user-token", "user-token-initialize", "user-token-tools-list", "user-token-tools-call", "wrong-audience"]) assert.strictEqual(status[name], "pass", `${name}\n${out}`);
   assert.match(out, /PASS user-token-initialize: initialize 200 protocolVersion=2025-11-25/);
   assert.match(out, new RegExp(`PASS user-token-tools-list: tools/list 200 tools=${EXPECTED_TOOLS.join(",")}`));
   assert.match(out, /PASS user-token: POST https:\/\/cloud\.blowhorn\.ai\/hydra\/oauth2\/token 200 token_type="bearer" expires_in=3600 scope="openid offline_access"/);
 
-  const a = mock.state.authorize;
+  const resources = (mock.state.authorizes ?? [mock.state.authorize]).map((a) => a.get("resource"));
+  assert.deepStrictEqual(resources, ["https://mcp.blowhorn.ai/mcp", WRONG_AUDIENCE_RESOURCE]);
+  const a = mock.state.authorizes[0];
   assert.deepStrictEqual(
     { response_type: a.get("response_type"), client_id: a.get("client_id"), redirect_uri: a.get("redirect_uri"), scope: a.get("scope"), resource: a.get("resource"), code_challenge_method: a.get("code_challenge_method") },
     { response_type: "code", client_id: "client-1", redirect_uri: REDIRECT_URI, scope: "openid offline_access", resource: "https://mcp.blowhorn.ai/mcp", code_challenge_method: "S256" },
@@ -359,15 +435,29 @@ test("test account verified: authorization code + PKCE through login and a plain
   assert.strictEqual(login.query.get("id"), "flow-1");
   assert.ok(login.cookie.includes(`csrf_token_1=${CSRF_COOKIE}`), "the flow's cookies are forwarded");
   assert.deepStrictEqual(Object.fromEntries(mock.state.consent), { consent_challenge: "consent-1", grant_scope: "openid", submit: "accept" });
-  const tok = mock.state.token;
+  const tokens = mock.state.tokens ?? [mock.state.token];
+  assert.deepStrictEqual(tokens.map((tok) => tok.get("resource")), ["https://mcp.blowhorn.ai/mcp", WRONG_AUDIENCE_RESOURCE]);
+  const tok = tokens[0];
   assert.deepStrictEqual(
     { grant_type: tok.get("grant_type"), code: tok.get("code"), client_id: tok.get("client_id"), redirect_uri: tok.get("redirect_uri"), resource: tok.get("resource") },
     { grant_type: "authorization_code", code: CODE, client_id: "client-1", redirect_uri: REDIRECT_URI, resource: "https://mcp.blowhorn.ai/mcp" },
   );
   assert.ok(mock.hosts.has(new URL(REDIRECT_URI).origin), "the code arrived on the loopback redirect");
   assert.ok(mock.seen.some((s) => s.authorization === `Bearer ${USER}`), "/mcp saw the obtained token");
+  assert.ok(mock.seen.some((s) => s.authorization === `Bearer ${WRONG}`), "/mcp saw the wrong-audience token");
   assert.ok(mock.seen.every((s) => s.ua === USER_AGENT));
-  for (const secret of [PASSWORD, CSRF, CSRF_COOKIE, SESSION, CODE, USER, REFRESH, tok.get("code_verifier")]) assert.ok(!out.includes(secret), `no secret in the output: ${secret.slice(0, 8)}`);
+  for (const secret of [PASSWORD, CSRF, CSRF_COOKIE, SESSION, CODE, USER, REFRESH, WRONG, tok.get("code_verifier")]) assert.ok(!out.includes(secret), `no secret in the output: ${secret.slice(0, 8)}`);
+});
+
+test("test account against Cloud's consent-request API: the widget page is accepted with the binding cookie, then initialize and the tools, no secret printed", async (t) => {
+  const mock = await production(t, { consent: "api" });
+  const { code, status, out } = await smoke(mock, { ...ACCOUNT, SMOKE_HOSTED_ORGANIZATION_ID: "org-1" });
+  assert.strictEqual(code, 0, out);
+  for (const name of ["user-login", "user-consent", "user-authorize", "user-token", "user-token-initialize", "user-token-tools-list", "user-token-tools-call", "wrong-audience"]) assert.strictEqual(status[name], "pass", `${name}\n${out}`);
+  assert.match(out, /PASS user-consent: consent-request API at https:\/\/cloud\.blowhorn\.ai\/oauth\/consent accepted: POST https:\/\/cloud\.blowhorn\.ai\/api\/identity\/oauth\/consent-requests\/accept 200/);
+  assert.deepStrictEqual(mock.state.consentApi.body, { consentChallenge: "consent-1" });
+  assert.ok(mock.state.consentApi.cookie.includes(`oauth_consent_test=${CONSENT_BINDING}`), "the /consent binding cookie is forwarded to the accept API");
+  for (const secret of [PASSWORD, CSRF, CSRF_COOKIE, SESSION, CONSENT_BINDING, CODE, USER, REFRESH, WRONG]) assert.ok(!out.includes(secret), "no secret in the output");
 });
 
 test("test account: a consent page that needs a browser, or a Cloudflare challenge, is a skip naming the URL and the step, never a pass", async (t) => {
@@ -375,7 +465,8 @@ test("test account: a consent page that needs a browser, or a Cloudflare challen
   assert.strictEqual(widget.code, 0, widget.out);
   assert.strictEqual(widget.status["user-login"], "pass");
   assert.strictEqual(widget.status["user-consent"], "skip");
-  assert.match(widget.out, /SKIP user-consent: GET https:\/\/cloud\.blowhorn\.ai\/consent\?consent_challenge=consent-1 200 is a consent page with no plain HTML form .*a person \(or a browser driver\) must open https:\/\/cloud\.blowhorn\.ai\/hydra\/oauth2\/auth\?/);
+  assert.strictEqual(widget.status["wrong-audience"], "skip", widget.out);
+  assert.match(widget.out, /SKIP user-consent: GET https:\/\/cloud\.blowhorn\.ai\/consent 200 has no plain HTML form, and POST https:\/\/cloud\.blowhorn\.ai\/api\/identity\/oauth\/consent-requests\/accept 404; a person \(or a browser driver\) must open https:\/\/cloud\.blowhorn\.ai\/hydra\/oauth2\/auth\?/);
 
   const blocked = await smoke(await production(t, { consent: "cloudflare" }), ACCOUNT);
   assert.strictEqual(blocked.code, 0, blocked.out);

@@ -49,6 +49,8 @@ export const REDIRECT_URI = "http://127.0.0.1:8976/oauth/callback";
 export const EXPECTED_PROTOCOL_VERSION = "2025-11-25";
 /** The read tools Cloud's /mcp serves. Missing or extra tools fail the check. */
 export const EXPECTED_TOOLS = Object.freeze(["listContentItems", "getContentItem", "getEvents", "getConnections", "listSchedules", "getScheduleById"]);
+/** A resource that must not be accepted at https://mcp.blowhorn.ai/mcp. Used as the default wrong-audience mint. */
+export const WRONG_AUDIENCE_RESOURCE = "https://cloud.blowhorn.ai/mcp";
 /** Tried in order for the one read tools/call. */
 const READ_CALLS = ["getEvents", "listContentItems"];
 const ACCEPT = "application/json, text/event-stream";
@@ -326,8 +328,9 @@ export async function checkRegistration(ctx, endpoint) {
  * Cloud-brokered flow the product uses (GET /api/auth/flow, POST
  * /api/auth/flow/submit); nothing here talks to the identity service
  * directly. Any hop that needs a person (email verification, a Cloudflare
- * challenge, a consent page with no plain HTML form) is a skip that names the
- * URL and the step, never a pass.
+ * challenge, a consent page that cannot be accepted through a plain HTML form
+ * or Cloud's consent-request API) is a skip that names the URL and the step,
+ * never a pass.
  */
 const MAX_HOPS = 20;
 const LOOPBACK = new URL(REDIRECT_URI);
@@ -451,9 +454,31 @@ export function consentForm(html, pageUrl) {
   return undefined;
 }
 
+/**
+ * A login flow document in either shape: Cloud's wrapper (`{ flow: { id,
+ * action, nodes, messages }, org, config }`) or a raw Kratos flow (`{ id,
+ * ui: { action, nodes, messages } }`). Missing parts are empty.
+ */
+export function loginFlow(doc) {
+  const raw = doc?.flow && typeof doc.flow === "object" ? doc.flow : doc;
+  const ui = raw?.ui && typeof raw.ui === "object" ? raw.ui : raw;
+  return {
+    id: typeof raw?.id === "string" && raw.id ? raw.id : undefined,
+    action: typeof raw?.action === "string" && raw.action ? raw.action : typeof ui?.action === "string" && ui.action ? ui.action : undefined,
+    nodes: Array.isArray(ui?.nodes) ? ui.nodes : [],
+    messages: Array.isArray(ui?.messages) ? ui.messages : [],
+  };
+}
+
 /** Kratos UI message texts, for a login that was refused. */
 function uiMessages(doc) {
-  return [...(doc?.ui?.messages ?? []), ...(doc?.ui?.nodes ?? []).flatMap((n) => n.messages ?? [])].map((m) => m.text ?? m.id).filter(Boolean);
+  const { nodes, messages } = loginFlow(doc);
+  return [...messages, ...nodes.flatMap((n) => n.messages ?? [])].map((m) => m?.text ?? m?.id).filter(Boolean);
+}
+
+/** The JSON body's top-level keys, for a fail message that must not print the body. */
+function topKeys(doc) {
+  return doc && typeof doc === "object" && !Array.isArray(doc) ? Object.keys(doc).join(",") || "(none)" : "(not a JSON object)";
 }
 
 /** The Cloud-brokered password login. Returns the URL to continue at, or undefined after reporting why not. */
@@ -473,11 +498,13 @@ async function signIn(ctx, jar, flow, loginUrl) {
   try {
     doc = JSON.parse(text);
   } catch {}
-  if (res.status !== 200 || !doc?.id) {
-    report.fail("user-login", `GET ${flowUrl.origin}${flowUrl.pathname}?type=login ${res.status} (expected 200 and a login flow id)`);
+  const login = loginFlow(doc);
+  if (res.status !== 200 || !login.id) {
+    const keys = res.status === 200 ? `; top-level keys: ${topKeys(doc)}` : "";
+    report.fail("user-login", `GET ${flowUrl.origin}${flowUrl.pathname}?type=login ${res.status} (expected 200 and a login flow id at flow.id or id${keys})`);
     return undefined;
   }
-  const nodes = doc.ui?.nodes ?? [];
+  const { nodes } = login;
   const csrf = nodes.find((n) => n.attributes?.name === "csrf_token")?.attributes?.value ?? doc.csrf_token;
   if (csrf) secrets.add(csrf);
   if (nodes.some((n) => n.group === "captcha" || /captcha|turnstile/i.test(n.attributes?.name ?? ""))) {
@@ -485,9 +512,14 @@ async function signIn(ctx, jar, flow, loginUrl) {
     return undefined;
   }
 
-  const submit = new URL("/api/auth/flow/submit", flow.origin);
-  submit.searchParams.set("id", doc.id);
-  submit.searchParams.set("type", "login");
+  // The flow's own action when it names one, else the documented submit path; either way only on the pinned origin.
+  const submit = new URL(login.action ?? "/api/auth/flow/submit", flow.origin);
+  if (submit.origin !== flow.origin) {
+    report.skip("user-login", `the login flow's action is at ${submit.origin}, off ${flow.origin}, and is not submitted; the test account is only sent to ${flow.origin}`);
+    return undefined;
+  }
+  if (!submit.searchParams.has("id")) submit.searchParams.set("id", login.id);
+  if (!submit.searchParams.has("type")) submit.searchParams.set("type", "login");
   const form = new URLSearchParams({ identifier: flow.email.value, password: flow.password.value, method: "password" });
   if (csrf) form.set("csrf_token", csrf);
   const sub = await jar.fetch(submit, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" }, body: form.toString() });
@@ -496,7 +528,8 @@ async function signIn(ctx, jar, flow, loginUrl) {
   try {
     answer = JSON.parse(subText);
   } catch {}
-  const location = sub.headers.get("location") ?? answer?.redirect_browser_to;
+  const location = sub.headers.get("location") ?? answer?.redirect_browser_to ?? answer?.flow?.redirect_browser_to;
+  const errorId = answer?.error?.id ?? answer?.flow?.error?.id;
   const next = location ? new URL(location, submit) : undefined;
   const detail = `POST ${submit.origin}${submit.pathname}?type=login ${sub.status}${next ? ` Location: ${next.origin}${next.pathname}` : ""}`;
   const messages = uiMessages(answer);
@@ -504,7 +537,7 @@ async function signIn(ctx, jar, flow, loginUrl) {
     report.skip("user-login", `${detail} is a Cloudflare challenge; ${personStep(flow)}`);
     return undefined;
   }
-  if (next?.pathname.startsWith("/verification") || answer?.error?.id === "session_verified_address_required" || messages.some((m) => /not (been )?verified|verif(y|ication) (your|the) (email|address)/i.test(m))) {
+  if (next?.pathname.startsWith("/verification") || errorId === "session_verified_address_required" || messages.some((m) => /not (been )?verified|verif(y|ication) (your|the) (email|address)/i.test(m))) {
     report.skip("user-login", `${detail}: email verification is required for ${flow.email.name}=${flow.email.value}. A person who can read that inbox must open the verification link Cloud sent to it, then re-run the smoke; the signed-in user-token checks are skipped until then`);
     return undefined;
   }
@@ -521,31 +554,72 @@ async function signIn(ctx, jar, flow, loginUrl) {
   return next;
 }
 
-/** Submits a plain consent form. Returns the URL to continue at, or undefined after reporting why not. */
+/** Cloud's consent-request accept path (meshery/schemas oauth_consent_request). */
+const CONSENT_ACCEPT_PATH = "/api/identity/oauth/consent-requests/accept";
+
+/**
+ * Accepts consent through a plain HTML form when the page has one, otherwise
+ * through Cloud's consent-request API (the hosted page is a JavaScript widget
+ * and the binding cookie /consent set is the only credential). Returns the
+ * URL to continue at, or undefined after reporting why not.
+ */
 async function giveConsent(ctx, jar, flow, page) {
   const where = `${page.url.origin}${page.url.pathname}`;
   const form = consentForm(page.body, page.url);
-  if (!form) {
-    ctx.report.skip("user-consent", `GET ${page.url.href} ${page.res.status} is a consent page with no plain HTML form to submit (a JavaScript widget needs a browser); ${personStep(flow)}`);
+  if (form) {
+    if (form.action.origin !== flow.origin) {
+      ctx.report.skip("user-consent", `the consent form at ${where} posts to ${form.action.origin}, not ${flow.origin}, and is not submitted; ${personStep(flow)}`);
+      return undefined;
+    }
+    const res = await jar.fetch(form.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "text/html,application/json" }, body: form.fields.toString() });
+    const text = await res.text();
+    const location = res.headers.get("location");
+    if (cloudflareChallenge(res, text)) {
+      ctx.report.skip("user-consent", `POST ${form.action.origin}${form.action.pathname} ${res.status} is a Cloudflare challenge; ${personStep(flow)}`);
+      return undefined;
+    }
+    if (res.status < 300 || res.status >= 400 || !location) {
+      ctx.report.fail("user-consent", `POST ${form.action.origin}${form.action.pathname} ${res.status} (expected a redirect back to the authorization server)`);
+      return undefined;
+    }
+    ctx.report.pass("user-consent", `consent form at ${where} accepted: POST ${res.status}`);
+    return new URL(location, form.action);
+  }
+
+  const challenge = page.url.searchParams.get("consent_challenge");
+  if (typeof challenge === "string" && challenge.length >= 6) ctx.secrets.add(challenge);
+  if (!challenge) {
+    ctx.report.skip("user-consent", `GET ${where} ${page.res.status} is a consent page with no plain HTML form and no consent_challenge; ${personStep(flow)}`);
     return undefined;
   }
-  if (form.action.origin !== flow.origin) {
-    ctx.report.skip("user-consent", `the consent form at ${where} posts to ${form.action.origin}, not ${flow.origin}, and is not submitted; ${personStep(flow)}`);
-    return undefined;
-  }
-  const res = await jar.fetch(form.action, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "text/html,application/json" }, body: form.fields.toString() });
+  const accept = new URL(CONSENT_ACCEPT_PATH, flow.origin);
+  const res = await jar.fetch(accept, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ consentChallenge: challenge }) });
   const text = await res.text();
-  const location = res.headers.get("location");
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch {}
+  const redirectTo = typeof doc?.redirectTo === "string" && doc.redirectTo ? doc.redirectTo : undefined;
+  const detail = `POST ${accept.origin}${accept.pathname} ${res.status}`;
   if (cloudflareChallenge(res, text)) {
-    ctx.report.skip("user-consent", `POST ${form.action.origin}${form.action.pathname} ${res.status} is a Cloudflare challenge; ${personStep(flow)}`);
+    ctx.report.skip("user-consent", `${detail} is a Cloudflare challenge; ${personStep(flow)}`);
     return undefined;
   }
-  if (res.status < 300 || res.status >= 400 || !location) {
-    ctx.report.fail("user-consent", `POST ${form.action.origin}${form.action.pathname} ${res.status} (expected a redirect back to the authorization server)`);
+  if ([401, 403, 404, 503].includes(res.status) || (res.status === 200 && !redirectTo)) {
+    ctx.report.skip("user-consent", `GET ${where} ${page.res.status} has no plain HTML form, and ${detail}${res.status === 200 ? " (no redirectTo)" : ""}; ${personStep(flow)}`);
     return undefined;
   }
-  ctx.report.pass("user-consent", `consent form at ${where} accepted: POST ${res.status}`);
-  return new URL(location, form.action);
+  if (res.status !== 200 || !redirectTo) {
+    ctx.report.fail("user-consent", `GET ${where} ${page.res.status} has no plain HTML form, and ${detail} (expected 200 with redirectTo)`);
+    return undefined;
+  }
+  const next = new URL(redirectTo, accept);
+  if (next.origin !== flow.origin && next.origin !== LOOPBACK.origin) {
+    ctx.report.skip("user-consent", `${detail} redirectTo is at ${next.origin}, off ${flow.origin}, and is not followed; ${personStep(flow)}`);
+    return undefined;
+  }
+  ctx.report.pass("user-consent", `consent-request API at ${where} accepted: ${detail}`);
+  return next;
 }
 
 /** Reports a browse() that ended somewhere other than the callback. */
@@ -615,8 +689,8 @@ function jwtAudience(token) {
  * code at the token_endpoint. Returns the access token, or undefined after
  * reporting why there is none.
  */
-export async function obtainUserToken(ctx, as, clientId, email, password) {
-  const { base, report, secrets } = ctx;
+export async function obtainUserToken(ctx, as, clientId, email, password, { resource = `${ctx.base}/mcp` } = {}) {
+  const { report, secrets } = ctx;
   if (!as?.authorization_endpoint || !as?.token_endpoint) {
     report.skip("user-token", "the authorization server metadata has no authorization_endpoint and token_endpoint");
     return undefined;
@@ -626,7 +700,6 @@ export async function obtainUserToken(ctx, as, clientId, email, password) {
     report.skip("user-token", `test account sign-in skipped: the test account is pinned to production Cloud ${DEFAULT_BASE}, and the authorization_endpoint is at ${origin}; ${ENV_NAMES.mcpToken.join(" or ")} can still check this base`);
     return undefined;
   }
-  const resource = `${base}/mcp`;
   const verifier = base64url(randomBytes(32));
   const state = base64url(randomBytes(16));
   secrets.add(verifier);
@@ -785,6 +858,24 @@ export async function checkSignedIn(ctx, label, token) {
   }
 }
 
+/**
+ * Mints a user token for WRONG_AUDIENCE_RESOURCE with the test account, using
+ * a child report so a setup skip or failure does not fail the main run.
+ * The minted token, when obtained, is still checked on /mcp by the caller.
+ */
+async function mintWrongAudienceToken(ctx, as, clientId, email, password) {
+  const child = { ...ctx, report: new Report(() => {}, ctx.secrets) };
+  try {
+    const token = await obtainUserToken(child, as, clientId, email, password, { resource: WRONG_AUDIENCE_RESOURCE });
+    if (token) return { token };
+    const last = child.report.results.at(-1);
+    const reason = last ? `${last.name} ${last.status}: ${last.detail}` : `no token minted for ${WRONG_AUDIENCE_RESOURCE}`;
+    return { reason: `${reason}; audience binding not checked` };
+  } catch (err) {
+    return { reason: `could not mint a token for ${WRONG_AUDIENCE_RESOURCE}: ${err?.message ?? err}` };
+  }
+}
+
 /** A token for another audience must be refused on /mcp. */
 export async function checkWrongAudience(ctx, token) {
   const res = await postInitialize(ctx, `Bearer ${token}`);
@@ -834,15 +925,25 @@ export async function run({ base: rawBase, env = process.env, fetch: fetchImpl =
     report.skip("mcp-token", `MCP OAuth token path skipped: ${ENV_NAMES.mcpToken.join(" and ")} are unset (need a user token bound to aud ${base}/mcp)`);
   }
   const account = ENV_NAMES.testEmail.concat(ENV_NAMES.testPassword);
+  let userToken;
   if (mcpToken) report.skip("user-token", `test account sign-in not used: ${mcpToken.name} is set`);
   else if (!email || !password) {
     const unset = account.filter((n) => !env[n]);
     report.skip("user-token", `test account sign-in skipped: ${unset.join(" and ")} ${unset.length > 1 ? "are" : "is"} unset (it needs both ${account.join(" and ")})`);
   } else if (!registered) report.skip("user-token", "test account sign-in skipped: no client_id, the dcr check failed");
   else {
-    const token = await step("user-token", () => obtainUserToken(ctx, as, registered.clientId, email, password));
-    if (token) await step("user-token-initialize", () => checkSignedIn(ctx, "user-token", token));
+    userToken = await step("user-token", () => obtainUserToken(ctx, as, registered.clientId, email, password));
+    if (userToken) await step("user-token-initialize", () => checkSignedIn(ctx, "user-token", userToken));
   }
+  if (wrongAud) await step("wrong-audience", () => checkWrongAudience(ctx, wrongAud.value));
+  else if (userToken) {
+    const minted = await mintWrongAudienceToken(ctx, as, registered.clientId, email, password);
+    if (minted.token) await step("wrong-audience", () => checkWrongAudience(ctx, minted.token));
+    else report.skip("wrong-audience", minted.reason ?? `${ENV_NAMES.wrongAudToken.join(" and ")} is unset and a token for ${WRONG_AUDIENCE_RESOURCE} could not be minted`);
+  } else {
+    report.skip("wrong-audience", `${ENV_NAMES.wrongAudToken.join(" and ")} is unset (a token minted for another audience); audience binding not checked`);
+  }
+
   if (registered) await step("dcr-cleanup", registered.cleanup);
 
   if (cloudToken) {
@@ -851,8 +952,6 @@ export async function run({ base: rawBase, env = process.env, fetch: fetchImpl =
   } else {
     report.skip("cloud-token", `Cloud API token path skipped: ${ENV_NAMES.cloudToken.join(" and ")} is unset`);
   }
-  if (wrongAud) await step("wrong-audience", () => checkWrongAudience(ctx, wrongAud.value));
-  else report.skip("wrong-audience", `${ENV_NAMES.wrongAudToken.join(" and ")} is unset (a token minted for another audience); audience binding not checked`);
 
   const counts = ["pass", "fail", "skip"].map((s) => `${report.results.filter((r) => r.status === s).length} ${s}`).join(", ");
   write(`${report.failed ? "FAILED" : "OK"}: ${counts}`);

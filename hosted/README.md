@@ -541,7 +541,7 @@ any failure:
 | `BLOWHORN_CLOUD_TOKEN` | Legacy Cloud API token; runs `cloud-token-*` |
 | `SMOKE_HOSTED_WRONG_AUD_TOKEN` | A real token minted for another audience; runs `wrong-audience` |
 | `SMOKE_HOSTED_ORGANIZATION_ID` or `BLOWHORN_CLOUD_ORGANIZATION` | `organizationId` for the read `tools/call`; without it only the call is skipped |
-| `BLOWHORN_MCP_TEST_EMAIL` and `BLOWHORN_MCP_TEST_PASSWORD` | The test account (`test-mcp@blowhorn.ai`). With both set and no `SMOKE_HOSTED_TOKEN` or `BLOWHORN_MCP_TOKEN`, runs `user-*`; a provided MCP token wins |
+| `BLOWHORN_MCP_TEST_EMAIL` and `BLOWHORN_MCP_TEST_PASSWORD` | The test account (`test+mcp@blowhorn.ai`). With both set and no `SMOKE_HOSTED_TOKEN` or `BLOWHORN_MCP_TOKEN`, runs `user-*`; a provided MCP token wins |
 
 Tokens and the test account are read from the environment only. Each
 signed-in check whose input is unset is skipped with the variables it needs,
@@ -567,9 +567,12 @@ gets a user-bound token the way a native MCP client does, without a browser:
    the product uses: `GET /api/auth/flow?type=login&login_challenge=...`,
    then `POST /api/auth/flow/submit` with `identifier`, `password`,
    `csrf_token` and `method=password`, forwarding the flow's cookies.
-3. At `/consent?consent_challenge=...` it follows an auto-accept redirect,
-   or submits a plain HTML `POST` form that carries `consent_challenge` and
-   an accept button.
+3. At a consent challenge it follows an auto-accept redirect, or submits a
+   plain HTML `POST` form that carries `consent_challenge` and an accept
+   button. When the page is Cloud's JavaScript consent widget (no plain
+   form), it accepts through `POST /api/identity/oauth/consent-requests/accept`
+   with `{ consentChallenge }`, using the consent binding cookie `/consent`
+   set, and then navigates to the answer's `redirectTo`.
 4. It catches the code on the loopback, exchanges it at the `token_endpoint`
    (`grant_type=authorization_code`, `code_verifier`, `client_id`,
    `redirect_uri`, `resource=<base>/mcp`), and runs `user-token-*` with the
@@ -593,13 +596,18 @@ Steps that need a person are skipped, never passed, and the run still exits
   Cloud sent, then re-runs the smoke. The verification is never bypassed.
 - **A Cloudflare challenge** (a `403`, `429` or `503` challenge page, or
   `cf-mitigated: challenge`) on any hop, a captcha in the login flow, or a
-  consent page with no plain form (a JavaScript widget). The skip prints the
+  consent page with no plain form whose consent-request API cannot be used
+  (`401`, `403`, `404` or `503`, or no `redirectTo`). The skip prints the
   URL where it stopped and the authorize URL a person (or a browser driver)
   must open to sign in as the test account and accept consent.
 
-The audience-bound negative case stays `SMOKE_HOSTED_WRONG_AUD_TOKEN`: a real
-token for another audience, such as `https://cloud.blowhorn.ai/mcp`, which is
-not on the production allowlist. The smoke never mints one.
+The audience-bound negative case is a token minted for another audience,
+`https://cloud.blowhorn.ai/mcp`, which is not on the production allowlist
+for `https://mcp.blowhorn.ai/mcp`. When `SMOKE_HOSTED_WRONG_AUD_TOKEN` is
+set, that token is used. When it is unset and the test account is available,
+the smoke mints one the same way as the signed-in path, with
+`resource=https://cloud.blowhorn.ai/mcp`, and presents it to `/mcp`, which
+must answer `401`.
 
 **Each run may leave one OAuth client in Cloud.** Cloud's registration
 answer has no `registration_client_uri` or `registration_access_token`, so
