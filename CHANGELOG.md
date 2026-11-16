@@ -5,6 +5,8 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+## 1.1.0
+
 - GitHub Copilot CLI plugin: Agent Plugins 1.0 `plugin.json`, a self-hosted
   marketplace at `.github/plugin/marketplace.json` (`copilot plugin marketplace add blowhorn-ai/blowhorn-mcp`,
   then `copilot plugin install blowhorn@blowhorn`). Root `mcp.json` is the
