@@ -17,12 +17,9 @@
  * The document is pinned by hosted/schemas/protected-resource.schema.json and
  * held by test/metadata.test.js.
  */
-import { DEFAULT_BASE } from "./proxy.js";
+import { DEFAULT_BASE, PUBLIC_ORIGIN, PUBLIC_RESOURCE } from "./proxy.js";
 
-/** Public origin clients connect to (custom domain on this Worker). */
-export const PUBLIC_ORIGIN = "https://mcp.blowhorn.ai";
-/** Protected resource identifier for clients of this Worker (MCP SDK match). */
-export const PUBLIC_RESOURCE = `${PUBLIC_ORIGIN}/mcp`;
+export { PUBLIC_ORIGIN, PUBLIC_RESOURCE };
 /** Cloud's /mcp path the Worker forwards to (design canonical deployment). */
 export const CLOUD_MCP_PATH = `${DEFAULT_BASE}/mcp`;
 /** Cloud's authorization server issuer on the Blowhorn host. */

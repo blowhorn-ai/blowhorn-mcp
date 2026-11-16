@@ -55,10 +55,12 @@ What crosses the Worker, both ways, is filtered by an allowlist:
 - **Request to Cloud (`/mcp`):** `Authorization`, `Content-Type`, `Accept`,
   `Mcp-Protocol-Version`, `Mcp-Session-Id`, `Last-Event-ID`, `traceparent`
   and `tracestate`, unchanged, plus the Worker's own
-  `User-Agent: blowhorn-mcp-hosted/<version>`. Nothing else: no `Cookie`, no
-  `Host`, `Forwarded` or `X-Forwarded-*`, no `X-Real-IP` or other client
-  identity, no `Origin` or `Referer`, no Cloudflare `CF-*` header. The
-  metadata routes are answered locally and never reach Cloud.
+  `User-Agent: blowhorn-mcp-hosted/<version>` and
+  `X-Forwarded-Mcp-Resource: https://mcp.blowhorn.ai/mcp` (always the public
+  resource; a client-supplied value is overwritten). Nothing else: no
+  `Cookie`, no `Host`, `Forwarded` or other `X-Forwarded-*`, no `X-Real-IP`
+  or other client identity, no `Origin` or `Referer`, no Cloudflare `CF-*`
+  header. The metadata routes are answered locally and never reach Cloud.
 - **Answer to the client:** `Content-Type`, `WWW-Authenticate`,
   `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Allow`, `Retry-After`, `Cache-Control` and `Link`.
   Never `Set-Cookie`, `Location` or any `Access-Control-*` from Cloud; the
@@ -163,10 +165,13 @@ do not merge this change before.** The Worker does not enforce any of it.
    exactly `/mcp`). The MCP OAuth client requires metadata `resource` to match
    that connect URL, so the Worker's RFC 9728 document uses it. The Worker
    forwards every request to Cloud at `https://cloud.blowhorn.ai/mcp` (the
-   design-doc deployment URL). Cloud must accept tokens whose audience is the
-   public resource on that proxied path. Never from `Host`, `X-Forwarded-*`,
-   `Forwarded`, `Origin` or any other request header; the Worker forwards none
-   of them.
+   design-doc deployment URL) and always sets `X-Forwarded-Mcp-Resource` to
+   the public resource so Cloud can check the token against that single
+   resource (layer5io/meshery-cloud#6452). Cloud must accept tokens whose
+   audience is the public resource on that proxied path. Never from `Host`,
+   other `X-Forwarded-*`, `Forwarded`, `Origin` or any other client request
+   header; the Worker forwards none of those, and overwrites a client-supplied
+   `X-Forwarded-Mcp-Resource`.
 2. **The unauthenticated challenge.** `POST /mcp` with no `Authorization`
    answers `401` with `WWW-Authenticate: Bearer resource_metadata="https://mcp.blowhorn.ai/.well-known/oauth-protected-resource/mcp"`
    (the Worker rewrites Cloud's challenge when needed).

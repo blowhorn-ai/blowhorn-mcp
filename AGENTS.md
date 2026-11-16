@@ -36,9 +36,10 @@ Notes for coding agents working in this repo.
   Never make the Worker an MCP server, an authorization server, a token
   validator or a REST gateway, and never forward a token to a REST API. The
   upstream URL is a constant, never built from the inbound request; only the
-  header allowlists in `hosted/src/proxy.js` cross the Worker (no cookie,
-  forwarded host or client identity); redirects are never followed; answers
-  stream. Keep the Origin policy on `/mcp` and both rate limits. The vendored
+  header allowlists in `hosted/src/proxy.js` plus the gateway's own
+  `User-Agent` and `X-Forwarded-Mcp-Resource` (always the public resource)
+  cross the Worker (no cookie, forwarded host or client identity); redirects
+  are never followed; answers stream. Keep the Origin policy on `/mcp` and both rate limits. The vendored
   schema (`hosted/schemas/vendor/`) stays byte for byte; refresh it only with
   `make hosted-schemas-refresh`. Deploy is automatic on merge to master, so
   the "Before cutover" list in `hosted/README.md` must be verified against

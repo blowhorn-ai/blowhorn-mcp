@@ -173,7 +173,9 @@ test("forged Host and forwarded-host headers change neither the metadata the SDK
   );
   assert.strictEqual(challenge.headers.get("WWW-Authenticate"), `Bearer resource_metadata="${PRM}"`);
   for (const s of cloud.seen) {
-    assert.deepStrictEqual(Object.keys(s.headers).filter((k) => /host|forwarded|evil/i.test(k) || /evil/.test(s.headers[k])), [], s.url);
+    const leaked = Object.keys(s.headers).filter((k) => k !== "x-forwarded-mcp-resource" && (/host|forwarded|evil/i.test(k) || /evil/.test(s.headers[k])));
+    assert.deepStrictEqual(leaked, [], s.url);
+    assert.strictEqual(s.headers["x-forwarded-mcp-resource"], MCP, "the gateway sets the public resource, not a client host");
   }
 });
 

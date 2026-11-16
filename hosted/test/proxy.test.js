@@ -129,6 +129,7 @@ test("only the allowlisted headers go to Cloud on /mcp, unchanged; no cookie, fo
     "X-Forwarded-Host": "evil.example",
     "X-Forwarded-Proto": "http",
     "X-Forwarded-For": "192.0.2.1",
+    "X-Forwarded-Mcp-Resource": "https://evil.example/mcp",
     "X-Real-IP": "192.0.2.1",
     "X-Original-URL": "/admin",
     "X-Original-Host": "evil.example",
@@ -149,14 +150,33 @@ test("only the allowlisted headers go to Cloud on /mcp, unchanged; no cookie, fo
   const res = await worker.fetch(post(initialize, { ...allowed, ...dropped }), ENV, {});
   assert.strictEqual(res.status, 200);
   const got = sent(calls[0]);
-  assert.deepStrictEqual(Object.keys(got).sort(), [...REQUEST_HEADERS.map((h) => h.toLowerCase()), "user-agent"].sort());
+  assert.deepStrictEqual(Object.keys(got).sort(), [...REQUEST_HEADERS.map((h) => h.toLowerCase()), "user-agent", "x-forwarded-mcp-resource"].sort());
   for (const [name, value] of Object.entries(allowed)) assert.strictEqual(got[name.toLowerCase()], value, name);
   assert.strictEqual(got["user-agent"], USER_AGENT, "the gateway's own User-Agent, never the client's");
+  assert.strictEqual(got["x-forwarded-mcp-resource"], MCP, "the public resource, never the client's");
   assert.match(USER_AGENT, /^blowhorn-mcp-hosted\/\d+\.\d+\.\d+$/);
   // Cloud saw nothing of the dropped names, whatever the case or spelling.
   const everything = JSON.stringify(cloud.seen.at(-1));
   for (const value of Object.values(dropped)) if (value.length > 5 && value !== "attacker/1.0") assert.ok(!everything.includes(value), value);
-  for (const name of Object.keys(dropped)) assert.ok(!(name.toLowerCase() in got) || name === "User-Agent", name);
+  for (const name of Object.keys(dropped)) assert.ok(!(name.toLowerCase() in got) || name === "User-Agent" || name === "X-Forwarded-Mcp-Resource", name);
+});
+
+test("every forwarded /mcp request sets X-Forwarded-Mcp-Resource to the public resource", async (t) => {
+  const cloud = fakeCloud({ legacyTokens: [TOKEN] });
+  const calls = mockFetch(t, (url, init) => cloud.handle(url, init));
+  const res = await worker.fetch(post(initialize, auth), ENV, {});
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(sent(calls[0])["x-forwarded-mcp-resource"], MCP);
+});
+
+test("a client-supplied X-Forwarded-Mcp-Resource is overwritten with the public resource", async (t) => {
+  const cloud = fakeCloud({ legacyTokens: [TOKEN] });
+  const calls = mockFetch(t, (url, init) => cloud.handle(url, init));
+  const forged = `${CLOUD}/mcp`;
+  const res = await worker.fetch(post(initialize, { ...auth, "X-Forwarded-Mcp-Resource": forged }), ENV, {});
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(sent(calls[0])["x-forwarded-mcp-resource"], MCP);
+  assert.notStrictEqual(sent(calls[0])["x-forwarded-mcp-resource"], forged);
 });
 
 test("the upstream URL is the constant Cloud URL: never the inbound host, path suffix or query", async (t) => {
