@@ -5,6 +5,11 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- GitHub Copilot CLI plugin: Agent Plugins 1.0 `plugin.json`, a self-hosted
+  marketplace at `.github/plugin/marketplace.json` (`copilot plugin marketplace add blowhorn-ai/blowhorn-mcp`,
+  then `copilot plugin install blowhorn@blowhorn`), and `mcp.json` gains the
+  Agent Plugins `$schema` plus `"type": "stdio"`. The Cursor command stays
+  `${userHome}/.local/bin/blowhorn-mcp` (#33).
 - `hosted/`: every request forwarded to Cloud's `/mcp` includes
   `X-Forwarded-Mcp-Resource: https://mcp.blowhorn.ai/mcp` (the public
   resource). A client-supplied value is overwritten (blowhorn-ai/blowhorn#1509,

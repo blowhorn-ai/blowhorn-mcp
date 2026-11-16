@@ -2,9 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/schemas/mcp-config.schema.json",
   "title": "Plugin MCP server config (.mcp.json, mcp.json)",
-  "description": "The mcpServers file a Claude Code plugin (.mcp.json) or a Cursor plugin (mcp.json) reads from its root. Ours, because the agent-plugins.org MCP schema (https://agent-plugins.org/schemas/1.0.0/mcp.schema.json) requires a $schema member and \"type\": \"stdio\", which neither client's documented form carries, so it is not vendored here.",
+  "description": "The mcpServers file a Claude Code plugin (.mcp.json) or a Cursor plugin (mcp.json) reads from its root. mcp.json is also the Agent Plugins 1.0 MCP config (GitHub Copilot CLI), so it may carry $schema set to https://agent-plugins.org/schemas/1.0.0/mcp.schema.json and \"type\": \"stdio\". Those fields are additive. Cursor still starts the server from command and interpolates ${userHome}; it does not expand ${HOME}. Claude Code's .mcp.json omits both fields and keeps ${HOME}. scripts/validate.js checks mcp.json against this schema and the vendored Agent Plugins MCP schema.",
   "type": "object",
   "properties": {
+    "$schema": {
+      "description": "Present on mcp.json so the file satisfies Agent Plugins 1.0. Omitted from .mcp.json.",
+      "const": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+    },
     "mcpServers": {
       "type": "object",
       "minProperties": 1,

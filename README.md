@@ -83,6 +83,23 @@ In `~/.cursor/mcp.json` (Cursor interpolates `${userHome}`):
 This repo is also a Cursor plugin (`.cursor-plugin/plugin.json` and
 `mcp.json`), which adds the Blowhorn skill as well.
 
+### GitHub Copilot CLI
+
+Install the plugin from this repo's marketplace. The install bundles the
+MCP server and the [Blowhorn skill](skills/blowhorn/SKILL.md):
+
+```bash
+copilot plugin marketplace add blowhorn-ai/blowhorn-mcp
+copilot plugin install blowhorn@blowhorn
+```
+
+The catalog is `.github/plugin/marketplace.json` in this repository.
+Enterprise managed settings can block the plugin.
+
+To try a local checkout, run `copilot plugin install ./` from the repo
+root. Copilot CLI caches plugin components, so run that install again
+after you edit them. The install to share is the marketplace one above.
+
 ### VS Code
 
 In your workspace's `.vscode/mcp.json`:
@@ -211,13 +228,15 @@ they drift.
 | `server.json` | MCP Registry entry | yes |
 | `.claude-plugin/plugin.json`, `.mcp.json` | Claude Code plugin | yes |
 | `.claude-plugin/marketplace.json` | Claude Code marketplace `blowhorn` | yes |
-| `.cursor-plugin/plugin.json`, `mcp.json` | Cursor plugin | yes |
+| `.cursor-plugin/plugin.json`, `mcp.json` | Cursor plugin. `mcp.json` is also the Agent Plugins MCP config | yes |
+| `plugin.json` | Agent Plugins 1.0 manifest (GitHub Copilot CLI) | yes |
+| `.github/plugin/marketplace.json` | Copilot CLI marketplace `blowhorn` | yes |
 | `gemini-extension.json` | Gemini CLI extension | yes |
 | `glama.json` | Glama maintainers | yes |
-| `skills/blowhorn/SKILL.md` | Agent skill, found by the Claude, Cursor and Gemini packages | no |
+| `skills/blowhorn/SKILL.md` | Agent skill, found by the Claude, Cursor, Copilot and Gemini packages | no |
 | `llms-install.md` | Install steps for Cline | no |
 | `assets/` | Official Blowhorn app icon, SVG and 400x400 PNG | no |
-| `schemas/*.schema.json` | Our schemas for listing.json, Cursor, Gemini and plugin mcp.json files | no |
+| `schemas/*.schema.json` | Our schemas for listing.json, Cursor, Gemini, the Copilot marketplace and plugin mcp.json files | no |
 | `schemas/vendor/` | Upstream schemas, byte for byte, with `SOURCES.json` | no (`make schemas-refresh`) |
 | `scripts/` | generate, validate, check and schemas-refresh | no |
 | `tools/` | Dev tooling package (Ajv), apart from the published package | no |

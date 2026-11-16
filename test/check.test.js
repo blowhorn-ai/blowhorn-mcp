@@ -30,10 +30,10 @@ test("packFiles reads npm pack --json output from npm 10 and 11 (an array) and n
 test("copy rules catch what they forbid and pass plain copy", () => {
   assert.ok(broken(`a ${String.fromCharCode(0x2014)} b`).length);
   assert.ok(broken(`a ${String.fromCharCode(0x2013)} b`).length);
-  for (const line of ["Calls https://cloud.blowhorn.ai", "Works on Windows", "See pricing", "Blowhorn is listed on Glama"]) {
+  for (const line of ["Calls https://cloud.blowhorn.ai", "Works on Windows", "See pricing", "Blowhorn is listed on Glama", "Blowhorn is listed on the Copilot Marketplace", "Blowhorn is published in the GitHub Copilot Marketplace"]) {
     assert.ok(broken(line).length, line);
   }
-  for (const line of ["Blowhorn runs locally on your Mac over stdio.", "Connect to the hosted server at https://mcp.blowhorn.ai/mcp", "Sign in with OAuth", "blowhorn-mcp is published on npm: npx -y blowhorn-mcp", "Published in the MCP Registry as io.github.blowhorn-ai/blowhorn", "runs-on: ubuntu-latest"]) {
+  for (const line of ["Blowhorn runs locally on your Mac over stdio.", "Connect to the hosted server at https://mcp.blowhorn.ai/mcp", "Sign in with OAuth", "blowhorn-mcp is published on npm: npx -y blowhorn-mcp", "Published in the MCP Registry as io.github.blowhorn-ai/blowhorn", "runs-on: ubuntu-latest", "copilot plugin marketplace add blowhorn-ai/blowhorn-mcp", "copilot plugin install blowhorn@blowhorn"]) {
     assert.deepStrictEqual(broken(line), [], line);
   }
 });

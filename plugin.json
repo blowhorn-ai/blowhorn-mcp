@@ -1,0 +1,39 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "blowhorn",
+  "version": "1.0.2",
+  "description": "Social media and marketing management from your AI agent: plan, draft, schedule, publish and track posts, replies and reposts on LinkedIn, X, Reddit, Hacker News, Bluesky and Slack; amplify on GitHub. Use the read-only hosted MCP or local macOS server; every change is a dry run until you confirm it.",
+  "author": {
+    "name": "Blowhorn",
+    "url": "https://blowhorn.ai/"
+  },
+  "homepage": "https://blowhorn.ai/docs/reference/mcp-server/",
+  "repository": "https://github.com/blowhorn-ai/blowhorn-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "social-media-management",
+    "social-media-marketing",
+    "marketing-management",
+    "social-media-automation",
+    "social-media-scheduler",
+    "content-calendar",
+    "post-scheduling",
+    "devrel",
+    "developer-relations",
+    "linkedin",
+    "x",
+    "twitter",
+    "reddit",
+    "hacker-news",
+    "bluesky",
+    "slack",
+    "github",
+    "mcp",
+    "mcp-server",
+    "hosted-mcp",
+    "oauth",
+    "ai-agent",
+    "dry-run",
+    "approval"
+  ]
+}

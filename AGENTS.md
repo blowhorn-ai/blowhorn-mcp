@@ -4,7 +4,8 @@ Notes for coding agents working in this repo.
 
 - **Generated files**: `server.json`, `.claude-plugin/plugin.json`,
   `.claude-plugin/marketplace.json`, `.mcp.json`, `.cursor-plugin/plugin.json`,
-  `mcp.json`, `gemini-extension.json` and `glama.json` are written by
+  `mcp.json`, `plugin.json`, `.github/plugin/marketplace.json`,
+  `gemini-extension.json` and `glama.json` are written by
   `scripts/generate.js` from `listing/listing.json` and `package.json`. Never
   edit them by hand: change the source, run `make generate`, commit both.
 - **Check before you finish**: run `make check`. It fails on drift between
@@ -18,7 +19,8 @@ Notes for coding agents working in this repo.
   server at mcp.blowhorn.ai may be named, OAuth included; never name Cloud's
   origin hostname outside `hosted/`. The npm package
   and the official MCP Registry entry are published; other marketplace
-  listings are future tense until they exist. The
+  listings are future tense until they exist. A self-hosted repo marketplace
+  install line (Claude Code or GitHub Copilot CLI) is fine. The
   full list, enforced by `make check`, is `RULES` in `scripts/check.js`.
 - **`lib/launcher-common.js` is a stable API** shared with the private
   repo's blowhorn-axi launcher through a submodule. Add, never change.

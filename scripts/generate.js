@@ -95,6 +95,8 @@ function outputs(listing, pkg) {
     // Cursor plugin. Cursor interpolates ${userHome} in mcp.json; it does not expand ${HOME}.
     // The manifest names mcp.json explicitly, so Cursor never falls back to
     // .mcp.json, the Claude Code plugin's ${HOME} config at the same root.
+    // The same mcp.json is the Agent Plugins 1.0 MCP config. $schema and
+    // "type": "stdio" are additive: Cursor still starts the server from command.
     ".cursor-plugin/plugin.json": {
       name: listing.slug,
       description: listing.shortDescription,
@@ -108,7 +110,44 @@ function outputs(listing, pkg) {
       mcpServers: "./mcp.json",
     },
     "mcp.json": {
-      mcpServers: { [listing.slug]: listing.commands.cursorPlugin },
+      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      mcpServers: { [listing.slug]: { type: "stdio", ...listing.commands.cursorPlugin } },
+    },
+
+    // Agent Plugins 1.0, which GitHub Copilot CLI installs. plugin.json at the
+    // repo root takes precedence over .claude-plugin/plugin.json. Skills stay
+    // at skills/<name>/SKILL.md. No agents, hooks, or other Copilot-only components.
+    "plugin.json": {
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      name: listing.slug,
+      version,
+      description: listing.shortDescription,
+      author,
+      homepage: docs,
+      repository,
+      license,
+      keywords: listing.keywords,
+    },
+    // Copilot CLI marketplace, separate from .claude-plugin/marketplace.json:
+    // copilot plugin marketplace add blowhorn-ai/blowhorn-mcp
+    // copilot plugin install blowhorn@blowhorn
+    ".github/plugin/marketplace.json": {
+      name: listing.slug,
+      owner: { name: listing.author.name },
+      metadata: { description: listing.shortDescription, version },
+      plugins: [
+        {
+          name: listing.slug,
+          source: "./",
+          description: listing.shortDescription,
+          version,
+          author,
+          homepage: docs,
+          repository,
+          license,
+          keywords: listing.keywords,
+        },
+      ],
     },
 
     // Gemini CLI extension; its version must equal the GitHub release tag.

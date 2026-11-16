@@ -19,7 +19,12 @@ const { createRequire } = require("node:module");
 const ROOT = path.join(__dirname, "..");
 const toolRequire = createRequire(path.join(ROOT, "tools", "package.json"));
 
-/** Each file and the schema it must satisfy, relative to the repo root. */
+/**
+ * Each file and the schema it must satisfy, relative to the repo root.
+ * A list means every schema must accept the file. mcp.json is one of those:
+ * the local config schema (shared with .mcp.json) and the vendored Agent
+ * Plugins MCP schema.
+ */
 const SCHEMAS = {
   "listing/listing.json": "schemas/listing.schema.json",
   "server.json": "schemas/vendor/mcp-server.schema.json",
@@ -27,13 +32,22 @@ const SCHEMAS = {
   ".claude-plugin/marketplace.json": "schemas/vendor/claude-code-marketplace.schema.json",
   ".mcp.json": "schemas/mcp-config.schema.json",
   ".cursor-plugin/plugin.json": "schemas/cursor-plugin.schema.json",
-  "mcp.json": "schemas/mcp-config.schema.json",
+  "mcp.json": ["schemas/mcp-config.schema.json", "schemas/vendor/agent-plugins-mcp.schema.json"],
+  "plugin.json": "schemas/vendor/agent-plugins-plugin.schema.json",
+  ".github/plugin/marketplace.json": "schemas/copilot-marketplace.schema.json",
   "gemini-extension.json": "schemas/gemini-extension.schema.json",
   "glama.json": "schemas/vendor/glama-server.schema.json",
   "schemas/vendor/SOURCES.json": "schemas/sources.schema.json",
 };
 
 const compiled = new Map();
+
+/** Schema paths registered for `relPath`. One file may have more than one. */
+function schemaPathsFor(relPath) {
+  const schemaPath = SCHEMAS[relPath];
+  if (!schemaPath) throw new Error(`no schema registered for ${relPath}`);
+  return [].concat(schemaPath);
+}
 
 /** A compiled validator for the schema at `schemaPath` (relative to the repo root). */
 function validatorFor(schemaPath) {
@@ -53,11 +67,13 @@ function validatorFor(schemaPath) {
 
 /** Error strings for `doc`, checked against the schema registered for `relPath`; [] when valid. */
 function validateDoc(doc, relPath) {
-  const schemaPath = SCHEMAS[relPath];
-  if (!schemaPath) throw new Error(`no schema registered for ${relPath}`);
-  const validate = validatorFor(schemaPath);
-  if (validate(doc)) return [];
-  return validate.errors.map((e) => `${relPath}${e.instancePath || ""}: ${e.message}${e.params && Object.keys(e.params).length ? ` ${JSON.stringify(e.params)}` : ""}`);
+  const errors = [];
+  for (const schemaPath of schemaPathsFor(relPath)) {
+    const validate = validatorFor(schemaPath);
+    if (validate(doc)) continue;
+    errors.push(...validate.errors.map((e) => `${relPath}${e.instancePath || ""}: ${e.message}${e.params && Object.keys(e.params).length ? ` ${JSON.stringify(e.params)}` : ""}`));
+  }
+  return errors;
 }
 
 /** Error strings for the JSON file at `file`, validated as `relPath`. */
@@ -92,14 +108,14 @@ function checkVendorHashes() {
   return errors;
 }
 
-module.exports = { SCHEMAS, validateDoc, validateFile, checkVendorHashes };
+module.exports = { SCHEMAS, schemaPathsFor, validateDoc, validateFile, checkVendorHashes };
 
 if (require.main === module) {
   const errors = [];
   for (const relPath of Object.keys(SCHEMAS)) {
     const found = validateFile(path.join(ROOT, relPath), relPath);
     errors.push(...found);
-    if (!found.length) process.stdout.write(`ok ${relPath} (${SCHEMAS[relPath]})\n`);
+    if (!found.length) process.stdout.write(`ok ${relPath} (${schemaPathsFor(relPath).join(", ")})\n`);
   }
   errors.push(...checkVendorHashes());
   if (errors.length) {
