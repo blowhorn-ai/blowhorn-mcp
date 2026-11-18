@@ -6,14 +6,14 @@
     "url": "https://blowhorn.ai/"
   },
   "metadata": {
-    "description": "Social media and marketing management from your AI agent: plan, draft, schedule, publish and track posts, replies and reposts on LinkedIn, X, Reddit, Hacker News, Bluesky and Slack; amplify on GitHub. Use the read-only hosted MCP or local macOS server; every change is a dry run until you confirm it.",
+    "description": "Not a bot. It's you. Social media and marketing management that grows replies, comments and real conversation, and posts, reposts and amplifies, on LinkedIn, X (Twitter), Reddit, Bluesky, Threads, Mastodon, Facebook, Instagram, TikTok, YouTube, Discord, Slack, GitHub and Hacker News.",
     "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "blowhorn",
       "source": "./",
-      "description": "Social media and marketing management from your AI agent: plan, draft, schedule, publish and track posts, replies and reposts on LinkedIn, X, Reddit, Hacker News, Bluesky and Slack; amplify on GitHub. Use the read-only hosted MCP or local macOS server; every change is a dry run until you confirm it.",
+      "description": "Not a bot. It's you. Social media and marketing management that grows replies, comments and real conversation, and posts, reposts and amplifies, on LinkedIn, X (Twitter), Reddit, Bluesky, Threads, Mastodon, Facebook, Instagram, TikTok, YouTube, Discord, Slack, GitHub and Hacker News.",
       "version": "1.1.0",
       "author": {
         "name": "Blowhorn",
