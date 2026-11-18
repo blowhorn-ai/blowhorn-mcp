@@ -42,16 +42,6 @@ function outputs(listing, pkg) {
       repository: { url: repository, source: "github" },
       websiteUrl: docs,
       version,
-      packages: [
-        {
-          registryType: "npm",
-          registryBaseUrl: "https://registry.npmjs.org",
-          identifier: pkg.name,
-          version,
-          runtimeHint: "npx",
-          transport: { type: "stdio" },
-        },
-      ],
       remotes: listing.remotes,
     },
 
@@ -113,13 +103,11 @@ function outputs(listing, pkg) {
     },
 
     // Agent Plugins 1.0 MCP config, which GitHub Copilot CLI reads from the
-    // plugin root. $schema and "type": "stdio" are required there. The command
-    // is a bare "node" with ${PLUGIN_ROOT} only in args (Agent Plugins 1.0
-    // sections 7.2.1 and 9.2), the same idea as the Gemini extension: node
-    // runs this repo's launcher, which execs ~/.local/bin/blowhorn-mcp.
+    // plugin root. $schema is required. type streamable-http is the hosted
+    // server (Agent Plugins MCP schema), not a local stdio command.
     "mcp.json": {
       $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-      mcpServers: { [listing.slug]: { type: "stdio", ...listing.commands.copilotPlugin } },
+      mcpServers: { [listing.slug]: listing.commands.copilotPlugin },
     },
 
     // Agent Plugins 1.0, which GitHub Copilot CLI installs. plugin.json at the
@@ -159,10 +147,8 @@ function outputs(listing, pkg) {
     },
 
     // Gemini CLI extension; its version must equal the GitHub release tag.
-    // Gemini CLI hydrates only ${extensionPath}, ${workspacePath} and ${/} in
-    // an extension manifest (packages/cli/src/config/extension-manager.ts),
-    // never ${HOME}, so the extension runs this repo's own launcher with node
-    // (Gemini CLI itself runs on Node), and that execs ~/.local/bin/blowhorn-mcp.
+    // The extension connects to the hosted server by url. Gemini CLI does not
+    // start a local process for that entry.
     "gemini-extension.json": {
       name: listing.slug,
       version,

@@ -7,7 +7,7 @@
  *   drift  every generated file equals what scripts/generate.js writes now
  *   copy   the copy rules hold in every tracked text file
  *   skill  every skills/<name>/SKILL.md has valid frontmatter
- *   facts  the docs name Blowhorn <minimumAppVersion> and carry listing.json's urls;
+ *   facts  MAINTAINERS.md names Blowhorn <minimumAppVersion> and the docs carry listing.json's urls;
  *          package.json's version, homepage and repository agree with them
  *   logo   listing.json's logo.png is a 400x400 PNG
  *   pack   the npm tarball holds exactly the launcher's files
@@ -143,16 +143,17 @@ function skill() {
 }
 
 /** Files that must name `Blowhorn <minimumAppVersion>`, and files one of which must carry each URL. */
-const VERSION_DOCS = ["README.md", "llms-install.md", "skills/blowhorn/SKILL.md"];
+const VERSION_DOCS = ["MAINTAINERS.md"];
 const URL_DOCS = ["README.md", "MAINTAINERS.md"];
 const DOC_URLS = ["setup", "privacy", "terms", "support", "download"];
 const REPOSITORY = "https://github.com/blowhorn-ai/blowhorn-mcp";
 
 /**
  * Problem strings for `listing` and `pkg` (package.json) against the docs, read by
- * `readDoc(file)`; [] when they agree. longDescription and urls are copy maintainers
- * paste into marketplace forms, so they must say what the docs say. The version is
- * plain X.Y.Z, never a prerelease, so a publish can never make one npm's `latest`.
+ * `readDoc(file)`; [] when they agree. urls are copy maintainers paste into
+ * marketplace forms, so they must appear in the docs. The launcher's minimum
+ * app version is named in MAINTAINERS.md. The version is plain X.Y.Z, never a
+ * prerelease, so a publish can never make one npm's `latest`.
  */
 function factProblems(listing, pkg, readDoc) {
   const problems = [];
@@ -164,7 +165,6 @@ function factProblems(listing, pkg, readDoc) {
   for (const file of VERSION_DOCS) {
     if (!readDoc(file).includes(want)) problems.push(`  ${file}: does not mention "${want}" (minimumAppVersion in listing/listing.json)`);
   }
-  if (!listing.longDescription.includes(want)) problems.push(`  listing/listing.json: longDescription does not mention "${want}"`);
   const docs = URL_DOCS.map(readDoc);
   for (const key of DOC_URLS) {
     const url = listing.urls[key];

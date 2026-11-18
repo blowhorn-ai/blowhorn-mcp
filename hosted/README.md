@@ -3,9 +3,9 @@
 **This is interim.** `blowhorn-mcp-hosted` is a Cloudflare Worker that stands
 in front of Blowhorn Cloud's `/mcp` endpoint at <https://mcp.blowhorn.ai/mcp>
 until Cloud answers on that origin itself (blowhorn-ai/blowhorn#1509, U3).
-When that ships, this Worker is retired. It is not the Blowhorn MCP server
-from the desktop app, which runs locally on your Mac and is what the rest of
-this repo is about.
+When that ships, this Worker is retired. Clients connect at
+<https://mcp.blowhorn.ai/mcp>. The npm package elsewhere in this repo is the
+desktop app's launcher, not a server clients should start.
 
 > **Status: deployed.** Version 0.2.0 is live at `https://mcp.blowhorn.ai`
 > (merged in blowhorn-mcp#30). It is a transport proxy for Cloud's `/mcp`,

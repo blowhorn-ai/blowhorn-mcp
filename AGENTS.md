@@ -15,8 +15,8 @@ Notes for coding agents working in this repo.
   anything but the launcher.
 - **Copy rules** (all text files except `LICENSE`, `schemas/vendor/` and
   lock files): hyphens, never em or en dashes; say "Blowhorn"; no persona
-  names. Blowhorn's local MCP server runs on macOS only. The hosted
-  server at mcp.blowhorn.ai may be named, OAuth included; never name Cloud's
+  names. Clients connect to the hosted server at mcp.blowhorn.ai and may
+  sign in with OAuth. The npm launcher runs on macOS only. Never name Cloud's
   origin hostname outside `hosted/`. The npm package
   and the official MCP Registry entry are published; other marketplace
   listings are future tense until they exist. A self-hosted repo marketplace
@@ -65,5 +65,5 @@ Notes for coding agents working in this repo.
   never grep source code.
 - **Project MCP server**: the repo root is the Claude Code plugin root, so
   Claude Code in this repo offers a project `blowhorn` MCP server from
-  `.mcp.json`. Decline it unless you are on a Mac with Blowhorn 1.61.0 or
-  later installed.
+  `.mcp.json`. It is the hosted server at `https://mcp.blowhorn.ai/mcp`.
+  Sign in with OAuth when the client asks.

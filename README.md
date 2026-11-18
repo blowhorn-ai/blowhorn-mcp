@@ -1,50 +1,30 @@
 # Blowhorn MCP server
 
-[Blowhorn](https://blowhorn.ai/) is an AI-native social media manager. This
-repo holds the small launcher that starts Blowhorn's MCP server, and every
-marketplace listing file for it. The MCP server itself ships inside the
-Blowhorn desktop app and runs locally on your Mac over stdio, so its tools
-always match the Blowhorn you have installed.
+[Blowhorn](https://blowhorn.ai/) is an AI-native social media manager. Connect
+your MCP client to the hosted server at <https://mcp.blowhorn.ai/mcp>. It is
+streamable HTTP. You sign in with your Blowhorn account through OAuth, and
+the client registers itself, so there is no key to copy and nothing to run
+on your own machine.
 
-- **One tool per Blowhorn command**, grouped Act, Manage, Connect, Run,
-  Observe and Meta. From Blowhorn 1.62.0, risky tools are hidden by
-  default because each removes or replaces your install, removes a
-  background service or LaunchAgent, or signs you out: `uninstall`,
-  `service_uninstall`, `auth_logout`, `desktop_build` and
-  `desktop_install`, and after Blowhorn 1.84.0 also `service_adopt` and
-  `chrome_attach_chrome_uninstall_agent`. To serve one, name it with `--allow-hidden-tool`
-  (repeatable) or in `BLOWHORN_MCP_ALLOW_HIDDEN_TOOLS`; see
-  [Hidden tools](https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/#hidden-tools).
-- **Dry run first**: reads run as asked. Every state change runs as a dry
-  run unless the call confirms it.
-- **Approval mode applies**: when it is on, work an agent confirms waits for
-  you to approve it in the Blowhorn app.
-- **No secrets**: tool results never carry secrets, and tool arguments are
-  never logged.
+The hosted server is read-only today. It has four tools: `getConnections`,
+`getEvents`, `getContentItem` and `listContentItems`. An agent can review
+your connected profiles, your activity and your content. Tool results never
+carry secrets.
 
-Reference: <https://blowhorn.ai/docs/reference/mcp-server/>
+Reference: <https://blowhorn.ai/docs/reference/mcp-server/>.
+Setup notes: <https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/>.
 
-## Requirements
-
-- macOS.
-- Blowhorn 1.61.0 or later, from <https://blowhorn.ai/download/>.
-- Open Blowhorn once. On first run it writes `~/.local/bin/blowhorn-mcp`,
-  the command every MCP client below starts.
-
-## Install
-
-Every client starts `~/.local/bin/blowhorn-mcp` as a stdio server. Step by
-step for each client: <https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/>.
-What the server does: <https://blowhorn.ai/docs/reference/mcp-server/>.
+## Connect
 
 ### Claude Code
 
 ```bash
-claude mcp add blowhorn -- ~/.local/bin/blowhorn-mcp
+claude mcp add --transport http blowhorn https://mcp.blowhorn.ai/mcp
 ```
 
 Or install it as a Claude Code plugin from this repo, which also adds the
-[Blowhorn skill](skills/blowhorn/SKILL.md):
+[Blowhorn skill](skills/blowhorn/SKILL.md). The plugin connects to the same
+hosted server:
 
 ```text
 /plugin marketplace add blowhorn-ai/blowhorn-mcp
@@ -53,14 +33,14 @@ Or install it as a Claude Code plugin from this repo, which also adds the
 
 ### Claude Desktop
 
-In `~/Library/Application Support/Claude/claude_desktop_config.json`, with
-your own user name in place of `YOU` (Claude Desktop does not expand `~`):
+In `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "blowhorn": {
-      "command": "/Users/YOU/.local/bin/blowhorn-mcp"
+      "type": "http",
+      "url": "https://mcp.blowhorn.ai/mcp"
     }
   }
 }
@@ -68,13 +48,13 @@ your own user name in place of `YOU` (Claude Desktop does not expand `~`):
 
 ### Cursor
 
-In `~/.cursor/mcp.json` (Cursor interpolates `${userHome}`):
+In `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "blowhorn": {
-      "command": "${userHome}/.local/bin/blowhorn-mcp"
+      "url": "https://mcp.blowhorn.ai/mcp"
     }
   }
 }
@@ -82,12 +62,12 @@ In `~/.cursor/mcp.json` (Cursor interpolates `${userHome}`):
 
 This repo is also a Cursor plugin (`.cursor-plugin/plugin.json` and
 `.cursor-plugin/mcp.json`), which adds the Blowhorn skill as well. That
-MCP file keeps `${userHome}/.local/bin/blowhorn-mcp`.
+MCP file uses the same hosted URL.
 
 ### GitHub Copilot CLI
 
 Install the plugin from this repo's marketplace. The install bundles the
-MCP server and the [Blowhorn skill](skills/blowhorn/SKILL.md):
+hosted MCP server and the [Blowhorn skill](skills/blowhorn/SKILL.md):
 
 ```bash
 copilot plugin marketplace add blowhorn-ai/blowhorn-mcp
@@ -95,15 +75,13 @@ copilot plugin install blowhorn@blowhorn
 ```
 
 The catalog is `.github/plugin/marketplace.json` in this repository.
-Enterprise managed settings can block the plugin.
+Enterprise managed settings can block the plugin. The Agent Plugins MCP
+config is the repo-root `mcp.json`, with `type` `streamable-http` and the
+hosted URL.
 
-The Agent Plugins MCP config is the repo-root `mcp.json`. It starts the
-server with `node` and `${PLUGIN_ROOT}/bin/blowhorn-mcp.js`, this repo's
-launcher, which then starts `~/.local/bin/blowhorn-mcp`.
-
-To try a local checkout, run `copilot plugin install ./` from the repo
-root. Copilot CLI caches plugin components, so run that install again
-after you edit them. The install to share is the marketplace one above.
+To try this repo before publishing it, run `copilot plugin install ./` from
+the repo root. Copilot CLI caches plugin components, so run that install
+again after you edit them. The install to share is the marketplace one above.
 
 ### VS Code
 
@@ -113,8 +91,8 @@ In your workspace's `.vscode/mcp.json`:
 {
   "servers": {
     "blowhorn": {
-      "type": "stdio",
-      "command": "${userHome}/.local/bin/blowhorn-mcp"
+      "type": "http",
+      "url": "https://mcp.blowhorn.ai/mcp"
     }
   }
 }
@@ -126,93 +104,34 @@ In your workspace's `.vscode/mcp.json`:
 gemini extensions install https://github.com/blowhorn-ai/blowhorn-mcp
 ```
 
-The extension runs this repo's own launcher with `node`, which then starts
-`~/.local/bin/blowhorn-mcp`. Gemini CLI fills in only `${extensionPath}`,
-`${workspacePath}` and `${/}` in an extension manifest, never `${HOME}`, so
-the extension cannot name `~/.local/bin/blowhorn-mcp` directly; Gemini CLI
-itself runs on Node, so `node` is always there.
+The extension's MCP entry is the hosted URL. Sign in when Gemini asks.
 
 ### Cline
 
-Follow [llms-install.md](llms-install.md). Cline does not expand `~`, so it
-needs the absolute path `/Users/<you>/.local/bin/blowhorn-mcp`.
-
-## npm
-
-The launcher is published on npm as
-[`blowhorn-mcp`](https://www.npmjs.com/package/blowhorn-mcp) and in the
-official [MCP Registry](https://registry.modelcontextprotocol.io/) as
-`io.github.blowhorn-ai/blowhorn`, so any client can start the server with:
-
-```bash
-npx -y blowhorn-mcp
-```
-
-In a client's JSON config, that is `"command": "npx"` with
-`"args": ["-y", "blowhorn-mcp"]`; on Claude Code it is
-`claude mcp add blowhorn -- npx -y blowhorn-mcp`. The npm launcher needs
-Node.js 20 or later and the Blowhorn app installed, and any arguments after
-`blowhorn-mcp` go to the server unchanged.
+Follow [llms-install.md](llms-install.md). Add the hosted URL, then sign in
+when Cline asks.
 
 ## Example prompts
 
-All of these are reads or dry runs:
+These only read:
 
-1. "List my Blowhorn profiles and tell me which ones need to sign in again."
-2. "Show my analytics for the last week and name the post that did best."
-3. "Draft a post announcing our 2.0 release for my LinkedIn and X profiles,
-   add it to the queue as a dry run, and show me what would be queued."
-4. "What is scheduled to go out today?"
-5. "Check that Blowhorn's service is running and report any diagnostics."
+1. "Show my Blowhorn connections."
+2. "List my content items."
+3. "What events do I have?"
+4. "Show one content item and tell me its state."
 
-## How the launcher finds the server
+## If the client does not connect
 
-`bin/blowhorn-mcp.js` (the npm launcher, the Gemini extension's command, and
-the Copilot plugin's command) uses the first of these that is present:
-
-1. `~/.local/bin/blowhorn-mcp`, the launcher the Blowhorn app writes.
-2. The engine the app recorded in
-   `~/Library/Application Support/Blowhorn/engine.json`.
-3. `/Applications/Blowhorn.app`, then `~/Applications/Blowhorn.app`.
-
-Before it starts the server from 2 or 3, the launcher checks that the
-`blowhorn` command every tool call runs can be found: `BLOWHORN_MCP_CLI` if
-you set it, then `~/.local/bin/blowhorn`, then `blowhorn` on your `PATH`.
-If none is there, it stops with `blowhorn_setup_incomplete` rather than
-start a server whose every tool call would fail.
-
-The launcher writes nothing to stdout, which belongs to the MCP protocol. Its
-own messages go to stderr. `blowhorn-mcp --launcher-version` prints the
-launcher's version.
-
-## Troubleshooting
-
-- **`code: blowhorn_missing`**: the Blowhorn app was not found. Install it
-  from <https://blowhorn.ai/download/>, open it once, then restart your MCP
-  client. An app kept outside `/Applications` and `~/Applications` is found
-  once it has been opened.
-- **`code: blowhorn_mcp_server_missing`**: the app was found but has no MCP
-  server inside it. Update or reinstall Blowhorn from
-  <https://blowhorn.ai/download/>.
-- **`code: blowhorn_setup_incomplete`**: the app was found but has not
-  finished setting up, so the `blowhorn` command is not in `~/.local/bin`
-  yet. Open Blowhorn once, then restart your MCP client. To use a `blowhorn`
-  command kept elsewhere, set `BLOWHORN_MCP_CLI` to its path in the server's
-  `env`.
-- **Your client shows no server**: check that `~/.local/bin/blowhorn-mcp`
-  exists and is executable (`test -x ~/.local/bin/blowhorn-mcp && echo ok`),
-  that the client's config uses a path it can expand (see the client's
-  section above), and check the client's MCP log, where the launcher's
-  messages appear.
+Sign in when the client opens the Blowhorn login. The URL has to be
+`https://mcp.blowhorn.ai/mcp`. Then restart the client and look at its MCP
+log.
 
 More help: <https://blowhorn.ai/docs/reference/support/>
 
 ## Privacy Policy
 
-Your data stays on your Mac, in the Blowhorn app. The MCP server runs
-locally and sends your data only to the social platforms and services you
-signed in to in Blowhorn. Tool results never carry secrets, and tool
-arguments are never logged.
+You sign in to the hosted server with your Blowhorn account. Tool results
+never carry secrets, and tool arguments are never logged.
 
 - Privacy policy: <https://blowhorn.ai/legal/privacy/>
 - Terms: <https://blowhorn.ai/legal/terms/>
@@ -233,8 +152,8 @@ they drift.
 | `server.json` | MCP Registry entry | yes |
 | `.claude-plugin/plugin.json`, `.mcp.json` | Claude Code plugin | yes |
 | `.claude-plugin/marketplace.json` | Claude Code marketplace `blowhorn` | yes |
-| `.cursor-plugin/plugin.json`, `.cursor-plugin/mcp.json` | Cursor plugin. The MCP config uses `${userHome}` | yes |
-| `mcp.json` | Agent Plugins 1.0 MCP config (GitHub Copilot CLI). `node` runs `${PLUGIN_ROOT}/bin/blowhorn-mcp.js` | yes |
+| `.cursor-plugin/plugin.json`, `.cursor-plugin/mcp.json` | Cursor plugin. The MCP config is the hosted URL | yes |
+| `mcp.json` | Agent Plugins 1.0 MCP config (GitHub Copilot CLI). Streamable HTTP to the hosted server | yes |
 | `plugin.json` | Agent Plugins 1.0 manifest (GitHub Copilot CLI) | yes |
 | `.github/plugin/marketplace.json` | Copilot CLI marketplace `blowhorn` | yes |
 | `gemini-extension.json` | Gemini CLI extension | yes |
@@ -248,7 +167,7 @@ they drift.
 | `tools/` | Dev tooling package (Ajv), apart from the published package | no |
 | `hosted/` | An interim MCP transport proxy to Cloud's `/mcp`, its own package; see [hosted/README.md](hosted/README.md) | no |
 
-The hosted/ folder holds an interim transport proxy for Cloud's `/mcp` (not the local server this repo ships); see [hosted/README.md](hosted/README.md).
+The hosted/ folder holds an interim transport proxy for the hosted server's `/mcp`; see [hosted/README.md](hosted/README.md).
 
 ## Development
 
@@ -268,10 +187,8 @@ other platform, and CI runs there too.
 Releases, npm publishing and the MCP Registry: see [MAINTAINERS.md](MAINTAINERS.md).
 
 The `version` in `server.json`, and in every plugin and extension manifest,
-is this npm launcher's version from `package.json`, not the Blowhorn desktop
-app's. Each MCP Registry publish pairs with an npm publish of the same
-version, and the launcher works with any Blowhorn 1.61.0 or later, so the
-app's version says nothing about what the registry entry installs.
+is this package's version from `package.json`. The registry entry points
+clients at the hosted server.
 
 ## License
 

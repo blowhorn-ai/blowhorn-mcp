@@ -5,6 +5,11 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- Clients connect to the hosted server at `https://mcp.blowhorn.ai/mcp` and
+  sign in with OAuth. The README, `llms-install.md`, the Blowhorn skill and
+  the generated client configs no longer tell anyone to start a local server.
+  `server.json` lists that remote and no longer publishes a stdio package.
+
 ## 1.1.0
 
 - GitHub Copilot CLI plugin: Agent Plugins 1.0 `plugin.json`, a self-hosted

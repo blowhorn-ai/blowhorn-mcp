@@ -25,11 +25,6 @@ const read = (file) => JSON.parse(fs.readFileSync(path.join(OUT, file), "utf8"))
 const MANIFESTS = ["server.json", ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".cursor-plugin/plugin.json", "plugin.json", ".github/plugin/marketplace.json", "gemini-extension.json"];
 const GENERATED = [...MANIFESTS, ".mcp.json", ".cursor-plugin/mcp.json", "mcp.json", "glama.json"];
 
-/** Expand ${VAR} from `vars`; an unknown variable stays as written. */
-function expand(text, vars) {
-  return text.replace(/\$\{([^}]+)\}/g, (whole, name) => (name in vars ? vars[name] : whole));
-}
-
 test("every generated file is stable 2-space JSON with a trailing newline, and validates against its schema", () => {
   for (const file of GENERATED) {
     const text = fs.readFileSync(path.join(OUT, file), "utf8");
@@ -45,19 +40,13 @@ test("generating twice writes the same bytes", () => {
   }
 });
 
-test("server.json: name, version and its one npm package follow package.json", () => {
+test("server.json: name and version follow package.json, and it publishes no stdio package", () => {
   const server = read("server.json");
   assert.strictEqual(server.name, PKG.mcpName);
   assert.strictEqual(server.version, PKG.version);
   assert.strictEqual(server.description, LISTING.registryDescription);
   assert.deepStrictEqual(server.repository, { url: "https://github.com/blowhorn-ai/blowhorn-mcp", source: "github" });
-  assert.strictEqual(server.packages.length, 1);
-  const [npm] = server.packages;
-  assert.strictEqual(npm.registryType, "npm");
-  assert.strictEqual(npm.identifier, PKG.name);
-  assert.strictEqual(npm.version, PKG.version);
-  assert.strictEqual(npm.registryBaseUrl, "https://registry.npmjs.org");
-  assert.deepStrictEqual(npm.transport, { type: "stdio" });
+  assert.strictEqual(server.packages, undefined);
 });
 
 test("server.json: title and remotes come from the listing, and remotes validate", () => {
@@ -81,14 +70,11 @@ test("every manifest's version equals the package version", () => {
   }
 });
 
-test("Claude Code plugin: .mcp.json's command expands to $HOME/.local/bin/blowhorn-mcp", () => {
-  const home = "/Users/someone";
+test("Claude Code plugin: .mcp.json connects to the hosted server", () => {
   const doc = read(".mcp.json");
   assert.strictEqual(doc.$schema, undefined);
   const server = doc.mcpServers.blowhorn;
-  assert.deepStrictEqual(Object.keys(server), ["command"]);
-  assert.strictEqual(server.type, undefined);
-  assert.strictEqual(expand(server.command, { HOME: home }), path.posix.join(home, ".local", "bin", "blowhorn-mcp"));
+  assert.deepStrictEqual(server, { type: "http", url: "https://mcp.blowhorn.ai/mcp" });
 });
 
 test("Claude Code marketplace: plugin blowhorn sourced from this repo's root, named like the plugin manifest", () => {
@@ -99,35 +85,28 @@ test("Claude Code marketplace: plugin blowhorn sourced from this repo's root, na
   assert.ok(fs.existsSync(path.join(ROOT, market.plugins[0].source, ".claude-plugin", "plugin.json")));
 });
 
-test("Cursor plugin: .cursor-plugin/mcp.json uses ${userHome}, which Cursor interpolates, and never ${HOME}", () => {
+test("Cursor plugin: .cursor-plugin/mcp.json connects to the hosted server and names no local command", () => {
   const doc = read(".cursor-plugin/mcp.json");
   assert.strictEqual(doc.$schema, undefined);
   const server = doc.mcpServers.blowhorn;
-  assert.deepStrictEqual(Object.keys(server), ["command"]);
-  assert.strictEqual(server.type, undefined);
+  assert.deepStrictEqual(server, { url: "https://mcp.blowhorn.ai/mcp" });
   const raw = JSON.stringify(doc);
   assert.ok(!raw.includes("${HOME}"), raw);
+  assert.ok(!raw.includes("${userHome}"), raw);
   assert.ok(!raw.includes("${PLUGIN_ROOT}"), raw);
   assert.ok(!raw.includes("npx"), raw);
-  assert.strictEqual(expand(server.command, { userHome: "/Users/someone" }), "/Users/someone/.local/bin/blowhorn-mcp");
   assert.deepStrictEqual(validateDoc(doc, ".cursor-plugin/mcp.json"), []);
 });
 
-test("Agent Plugins mcp.json: node runs this repo's launcher once ${PLUGIN_ROOT} is substituted", () => {
+test("Agent Plugins mcp.json connects to the hosted server over streamable HTTP", () => {
   const doc = read("mcp.json");
   assert.strictEqual(doc.$schema, "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json");
   const server = doc.mcpServers.blowhorn;
-  assert.strictEqual(server.type, "stdio");
-  assert.strictEqual(server.command, "node");
-  assert.strictEqual(server.args.length, 1);
+  assert.deepStrictEqual(server, { type: "streamable-http", url: "https://mcp.blowhorn.ai/mcp" });
   const raw = JSON.stringify(server);
   assert.ok(!raw.includes("${userHome}"), raw);
   assert.ok(!raw.includes("${HOME}"), raw);
-  const script = expand(server.args[0], { PLUGIN_ROOT: ROOT });
-  assert.strictEqual(script, path.join(ROOT, "bin", "blowhorn-mcp.js"));
-  assert.ok(fs.statSync(script).isFile());
-  const r = spawnSync(process.execPath, [script, "--launcher-version"], { encoding: "utf8" });
-  assert.strictEqual(r.stdout, `${PKG.version}\n`);
+  assert.ok(!raw.includes("${PLUGIN_ROOT}"), raw);
   assert.deepStrictEqual(validateDoc(doc, "mcp.json"), []);
 });
 
@@ -174,22 +153,14 @@ test("Cursor plugin: the manifest points at the Cursor-only mcp.json, never at m
   assert.strictEqual(file, ".cursor-plugin/mcp.json");
   assert.notStrictEqual(file, "mcp.json");
   assert.notStrictEqual(file, ".mcp.json");
-  const { command } = read(file).mcpServers.blowhorn;
-  assert.ok(command.includes("${userHome}"), command);
-  assert.ok(!command.includes("${HOME}"), command);
-  assert.ok(!command.includes("${PLUGIN_ROOT}"), command);
-  assert.ok(!command.includes("npx"), command);
+  const server = read(file).mcpServers.blowhorn;
+  assert.strictEqual(server.url, "https://mcp.blowhorn.ai/mcp");
+  assert.strictEqual(server.command, undefined);
 });
 
-test("Gemini extension: node runs this repo's launcher once ${extensionPath} and ${/} are substituted", () => {
+test("Gemini extension connects to the hosted server and starts no local launcher", () => {
   const server = read("gemini-extension.json").mcpServers.blowhorn;
-  assert.strictEqual(server.command, "node");
-  assert.strictEqual(server.args.length, 1);
-  const script = expand(server.args[0], { extensionPath: ROOT, "/": path.sep });
-  assert.strictEqual(script, path.join(ROOT, "bin", "blowhorn-mcp.js"));
-  assert.ok(fs.statSync(script).isFile());
-  const r = spawnSync(process.execPath, [script, "--launcher-version"], { encoding: "utf8" });
-  assert.strictEqual(r.stdout, `${PKG.version}\n`);
+  assert.deepStrictEqual(server, { url: "https://mcp.blowhorn.ai/mcp" });
 });
 
 test("plugin and listing logo paths exist", () => {

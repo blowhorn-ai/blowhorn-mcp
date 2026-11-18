@@ -11,8 +11,9 @@ One version number, `version` in `package.json`, is the npm launcher's
 version and is copied by `make generate` into `server.json`, both Claude
 Code manifests, the Cursor plugin, `plugin.json`, the Copilot marketplace
 and `gemini-extension.json`. It is not the
-Blowhorn desktop app's version: the launcher works with any Blowhorn 1.61.0
-or later, and every MCP Registry publish pairs with an npm publish of the
+Blowhorn desktop app's version: the npm launcher works with any Blowhorn 1.61.0
+or later, from <https://blowhorn.ai/download/>. Clients connect to the hosted
+server instead. Every MCP Registry publish pairs with an npm publish of the
 same version.
 
 Versions are plain `X.Y.Z`, never a prerelease, so a publish can never make
@@ -161,7 +162,6 @@ hand.
 ## Contributors
 
 This repo's root is the Claude Code plugin root, so Claude Code opened in
-this repo offers a project `blowhorn` MCP server from `.mcp.json`. Decline
-it unless you are on a Mac with Blowhorn 1.61.0 or later installed; anywhere
-else `~/.local/bin/blowhorn-mcp` does not exist and the server fails to
-start.
+this repo offers a project `blowhorn` MCP server from `.mcp.json`. That
+server is the hosted one at `https://mcp.blowhorn.ai/mcp`. Sign in with
+OAuth when the client asks.
