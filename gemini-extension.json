@@ -4,10 +4,7 @@
   "description": "Not a bot. It's you. Social media and marketing management that grows replies, comments and real conversation, and posts, reposts and amplifies, on LinkedIn, X (Twitter), Reddit, Bluesky, Threads, Mastodon, Facebook, Instagram, TikTok, YouTube, Discord, Slack, GitHub and Hacker News.",
   "mcpServers": {
     "blowhorn": {
-      "command": "node",
-      "args": [
-        "${extensionPath}${/}bin${/}blowhorn-mcp.js"
-      ]
+      "url": "https://mcp.blowhorn.ai/mcp"
     }
   }
 }

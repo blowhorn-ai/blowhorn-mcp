@@ -55,20 +55,17 @@ const listing = {
   urls: { docs: "https://e.test/docs", setup: "https://e.test/setup", privacy: "https://e.test/privacy", terms: "https://e.test/terms", support: "https://e.test/support", download: "https://e.test/download" },
 };
 const good = {
-  "README.md": "Needs Blowhorn 1.2.3. https://e.test/setup https://e.test/privacy https://e.test/terms",
-  "MAINTAINERS.md": "https://e.test/support https://e.test/download",
-  "llms-install.md": "Install Blowhorn 1.2.3 or later",
-  "skills/blowhorn/SKILL.md": "Blowhorn 1.2.3",
+  "README.md": "https://e.test/setup https://e.test/privacy https://e.test/terms",
+  "MAINTAINERS.md": "Blowhorn 1.2.3. https://e.test/support https://e.test/download",
 };
 const pkg = { version: "1.0.0", homepage: "https://e.test/docs", repository: { type: "git", url: "git+https://github.com/blowhorn-ai/blowhorn-mcp.git" } };
 
 test("factProblems passes docs that match the listing and names each mismatch", () => {
   assert.deepStrictEqual(factProblems(listing, pkg, (f) => good[f]), []);
-  const stale = { ...good, "llms-install.md": "Install Blowhorn 1.2.2 or later", "MAINTAINERS.md": "https://e.test/support" };
-  const problems = factProblems({ ...listing, longDescription: "Requires Blowhorn." }, pkg, (f) => stale[f]);
-  assert.strictEqual(problems.length, 3, problems.join("\n"));
-  assert.ok(problems.some((p) => p.includes("llms-install.md")));
-  assert.ok(problems.some((p) => p.includes("longDescription")));
+  const stale = { ...good, "MAINTAINERS.md": "Blowhorn 9.9.9. https://e.test/support" };
+  const problems = factProblems(listing, pkg, (f) => stale[f]);
+  assert.strictEqual(problems.length, 2, problems.join("\n"));
+  assert.ok(problems.some((p) => p.includes("MAINTAINERS.md") && p.includes("1.2.3")));
   assert.ok(problems.some((p) => p.includes("urls.download")));
 });
 

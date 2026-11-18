@@ -1,7 +1,7 @@
 {
   "name": "blowhorn-mcp",
   "version": "1.1.0",
-  "description": "Starts the Blowhorn MCP server from the Blowhorn app on this Mac, over stdio: your Blowhorn commands as tools, dry run first.",
+  "description": "Connect to Blowhorn's hosted MCP server at https://mcp.blowhorn.ai/mcp and sign in with OAuth.",
   "keywords": [
     "blowhorn",
     "mcp",

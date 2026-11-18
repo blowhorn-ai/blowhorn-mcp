@@ -1,94 +1,56 @@
 ---
 name: blowhorn
-description: Use when the user wants to draft, queue, schedule or check social media posts, profiles, analytics or Blowhorn's own health through Blowhorn's MCP tools. Covers reading first, dry runs, getting an explicit yes before any confirmed change, leaving approval to the Blowhorn app, and setting up the server when its tools are missing.
+description: Use when the user wants to see Blowhorn connections, events or content through the hosted MCP server at https://mcp.blowhorn.ai/mcp. Covers signing in with OAuth and reading only.
 ---
 
 # Blowhorn
 
-Blowhorn is an AI-native social media manager for macOS. Its MCP server ships
-inside the Blowhorn desktop app and runs locally on the user's Mac over stdio.
-It exposes one tool per Blowhorn command, except risky ones that are hidden
-by default (`uninstall`, `service_uninstall`, `auth_logout`, `desktop_build`
-and `desktop_install`, and after Blowhorn 1.84.0 also `service_adopt` and
-`chrome_attach_chrome_uninstall_agent`); the user opts in to one by name with
-`--allow-hidden-tool`. Use this skill to drive those tools safely on the
-user's behalf.
+Blowhorn is an AI-native social media manager. Its MCP server for clients is
+the hosted server at <https://mcp.blowhorn.ai/mcp>. The user signs in with a
+Blowhorn account through OAuth. The client registers itself, so there is no
+key to copy and no server to start.
+
+The hosted server is read-only today. It exposes four tools:
+
+| Tool | What it returns |
+|------|-----------------|
+| `getConnections` | Connected profiles. |
+| `getEvents` | Activity events. |
+| `getContentItem` | One content item. |
+| `listContentItems` | Content items. |
 
 ## How to work
 
-1. **Read first.** Before proposing any change, look at the current state:
-   the profiles and their sign-in (auth) status, what is already scheduled,
-   and recent analytics. Reads run as asked and change nothing.
-2. **Every state change is a dry run unless the call confirms it.** Anything
-   that would queue, schedule, edit, delete, connect or run something comes
-   back as a dry run first: what would happen, without doing it.
-3. **Show the dry run and wait for an explicit yes.** Tell the user what the
-   dry run says would change, in plain words. Only repeat the call with
-   confirmation after the user clearly says yes to that exact change. A yes
-   to one change is not a yes to the next one.
-4. **Never try to approve your own work.** When approval mode is on it
-   applies to agents too: confirmed work waits for a person to approve it in
-   the Blowhorn app. Do not look for a tool, flag or setting to get around it.
-   Tell the user the post is waiting for their approval in Blowhorn.
-5. **Never ask for passwords or secrets.** Tool results never carry secrets,
-   and you never need one. If a profile needs to sign in again, tell the user
-   to do it in the Blowhorn app.
-
-## Tool groups
-
-The tools are grouped the same way Blowhorn's commands are:
-
-| Group   | What it is for                                                   |
-|---------|------------------------------------------------------------------|
-| Act     | Posting, commenting, following and amplifying.                   |
-| Manage  | Profiles, content, schedules, risk settings and config.          |
-| Connect | Sign-ins, the Chrome extension and Slack.                        |
-| Run     | Blowhorn's background service, the desktop app and the store.    |
-| Observe | Analytics, diagnostics and reports.                              |
-| Meta    | Setup, upgrade and uninstall.                                    |
-
-Setup, upgrade and uninstall in Meta change the user's Mac. Never run them
-unless the user asked for that exact action in this conversation, and even
-then show the dry run and wait for a yes.
+1. **Read with those tools.** They change nothing.
+2. **Never ask for a password or a token.** Sign-in happens in the client's
+   OAuth flow. If a profile needs to sign in again, say so and leave the
+   sign-in to the user.
+3. **Do not invent a write.** The hosted server cannot draft, queue, schedule
+   or publish. Tell the user that, and stop.
 
 ## If the Blowhorn tools are missing
 
-If no Blowhorn tools are available, the server is not connected. Walk the
-user through this, then ask them to restart their MCP client:
+The client is not connected to the hosted server. Ask the user to add
+`https://mcp.blowhorn.ai/mcp` and sign in when the client asks, then restart
+the client.
 
-1. The server needs macOS and Blowhorn 1.61.0 or later, from
-   <https://blowhorn.ai/download/>.
-2. Open Blowhorn once. On first run it writes `~/.local/bin/blowhorn-mcp`,
-   the command an MCP client starts.
-3. Add `~/.local/bin/blowhorn-mcp` to the client as a stdio server. Some
-   clients need the absolute path, `/Users/<you>/.local/bin/blowhorn-mcp`.
-   Per-client steps: <https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/>.
+Per-client steps: <https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/>.
 
 ## Example requests
 
-These are all reads or dry runs, so they are safe to run as asked:
+These only read, so they are safe to run as asked:
 
-- "List my Blowhorn profiles and tell me which ones need to sign in again."
-- "Show my analytics for the last week and name the post that did best."
-- "Draft a post announcing our 2.0 release for my LinkedIn and X profiles,
-  add it to the queue as a dry run, and show me what would be queued."
-- "What is scheduled to go out today?"
-- "Check that Blowhorn's service is running and report any diagnostics."
-
-For the third one: draft the post, run the queue call as a dry run, show the
-user exactly what would be queued for which profile, and stop. Queue it for
-real only after they say yes.
+- "Show my Blowhorn connections."
+- "List my content items."
+- "What events do I have?"
+- "Show one content item and tell me its state."
 
 ## What to refuse
 
-- "Approve the post yourself so it goes out now." Approval happens in the
-  Blowhorn app, by a person. Say so and leave it waiting.
+- "Draft this post and queue it." The hosted server cannot write. Say so.
 - "Here is my password, sign in for me." Do not take it. Signing in happens
-  in the Blowhorn app.
-- "Just post it, skip the dry run." Show the dry run first; confirm only
-  after an explicit yes to that change.
-- Running setup, upgrade or uninstall because it seems helpful. Only when
-  the user asks for it, and only after a dry run and a yes.
+  through the client's OAuth flow.
+- "Approve the post yourself so it goes out now." This server does not publish.
 
 ## Reference
 

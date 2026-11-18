@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/blowhorn-ai/blowhorn-mcp/schemas/mcp-config.schema.json",
   "title": "Plugin MCP server config (.mcp.json, .cursor-plugin/mcp.json, mcp.json)",
-  "description": "The mcpServers shape shared by three generated configs. .mcp.json is Claude Code: command only, ${HOME}, no $schema and no type. .cursor-plugin/mcp.json is Cursor: command only, ${userHome} (Cursor interpolates ${userHome} and leaves ${HOME} unexpanded), no $schema and no type. mcp.json is the Agent Plugins 1.0 MCP config (GitHub Copilot CLI): $schema is https://agent-plugins.org/schemas/1.0.0/mcp.schema.json, type is stdio, command is node, and args carry ${PLUGIN_ROOT}. scripts/validate.js checks mcp.json against this schema and the vendored Agent Plugins MCP schema. It checks .mcp.json and .cursor-plugin/mcp.json against this schema only.",
+  "description": "The mcpServers shape shared by three generated configs. Each one connects to the hosted server. .mcp.json is Claude Code: type http and a url, no $schema. .cursor-plugin/mcp.json is Cursor: a url, no $schema and no type. mcp.json is the Agent Plugins 1.0 MCP config (GitHub Copilot CLI): $schema is https://agent-plugins.org/schemas/1.0.0/mcp.schema.json and type is streamable-http. scripts/validate.js checks mcp.json against this schema and the vendored Agent Plugins MCP schema. It checks .mcp.json and .cursor-plugin/mcp.json against this schema only.",
   "type": "object",
   "properties": {
     "$schema": {
@@ -12,22 +12,19 @@
     "mcpServers": {
       "type": "object",
       "minProperties": 1,
-      "additionalProperties": { "$ref": "#/$defs/stdioServer" }
+      "additionalProperties": { "$ref": "#/$defs/remoteServer" }
     }
   },
   "required": ["mcpServers"],
   "additionalProperties": false,
   "$defs": {
-    "stdioServer": {
+    "remoteServer": {
       "type": "object",
       "properties": {
-        "type": { "const": "stdio" },
-        "command": { "type": "string", "minLength": 1 },
-        "args": { "type": "array", "items": { "type": "string" } },
-        "env": { "type": "object", "additionalProperties": { "type": "string" } },
-        "cwd": { "type": "string" }
+        "type": { "enum": ["http", "streamable-http"] },
+        "url": { "type": "string", "pattern": "^https://" }
       },
-      "required": ["command"],
+      "required": ["url"],
       "additionalProperties": false
     }
   }
