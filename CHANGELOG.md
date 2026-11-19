@@ -5,6 +5,10 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- `hosted/`: `GET` and `HEAD /.well-known/openai-apps-challenge` return the
+  `OPENAI_APPS_CHALLENGE` Worker secret as `text/plain` (OpenAI apps domain
+  verification). The secret is set with `npx wrangler secret put` from
+  `hosted/` and is not a wrangler var. Unset or blank, the path is a `404`.
 - Clients connect to the hosted server at `https://mcp.blowhorn.ai/mcp` and
   sign in with OAuth. The README, `llms-install.md`, the Blowhorn skill and
   the generated client configs no longer tell anyone to start a local server.

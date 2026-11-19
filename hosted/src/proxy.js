@@ -37,19 +37,22 @@ export const MAX_REQUEST_BYTES = 1024 * 1024;
 const ALLOWED_BASES = [DEFAULT_BASE];
 
 /**
- * The only paths the gateway serves, each mapped to the same path on Cloud.
- * Everything else is a 404 from the Worker. `methods` are the ones carried to
- * Cloud; the Worker answers OPTIONS itself, and src/index.js answers a
+ * The only paths the gateway serves. `/mcp` is carried to the same path on
+ * Cloud. Everything else in this table is answered here, and every path not
+ * in it is a 404 from the Worker. `methods` on `/mcp` are the ones carried
+ * to Cloud; the Worker answers OPTIONS itself, and src/index.js answers a
  * GET /mcp with no usable Bearer token. The metadata routes are public
  * RFC 9728 documents answered locally by src/metadata.js (not forwarded), so
  * a client that starts at https://mcp.blowhorn.ai learns Cloud's Blowhorn
  * issuer and the canonical audience without depending on Cloud's tenant host
- * strings.
+ * strings. The OpenAI apps challenge is a public text body from the
+ * OPENAI_APPS_CHALLENGE secret (src/index.js); it is not forwarded either.
  */
 export const ROUTES = Object.freeze({
   "/mcp": Object.freeze({ kind: "mcp", methods: Object.freeze(["POST", "GET", "DELETE"]) }),
   "/.well-known/oauth-protected-resource/mcp": Object.freeze({ kind: "metadata", methods: Object.freeze(["GET", "HEAD"]) }),
   "/.well-known/oauth-protected-resource": Object.freeze({ kind: "metadata", methods: Object.freeze(["GET", "HEAD"]) }),
+  "/.well-known/openai-apps-challenge": Object.freeze({ kind: "openai-challenge", methods: Object.freeze(["GET", "HEAD"]) }),
 });
 
 /** Request headers carried to Cloud on /mcp. Anything not listed is dropped. */
