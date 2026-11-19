@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🙋🏾🙋🏼 Question
+    url: https://slack.layer5.io
+    about: Ask a question on the Layer5 Community Slack.
+  - name: 💬 Discussion Forum
+    url: https://discuss.layer5.io
+    about: Submit a broader topic or question on the Layer5 Discussion Forum.
