@@ -1,4 +1,6 @@
-# Blowhorn MCP server
+# Blowhorn MCP Server
+
+[![M8ven Score](https://m8ven.ai/badge/mcp/blowhorn-ai-blowhorn-mcp-yv9x23)](https://m8ven.ai/mcp/blowhorn-ai-blowhorn-mcp-yv9x23?s=readme)
 
 [Blowhorn](https://blowhorn.ai/) is an AI-native social media manager. Connect
 your MCP client to the hosted server at <https://mcp.blowhorn.ai/mcp>. It is
