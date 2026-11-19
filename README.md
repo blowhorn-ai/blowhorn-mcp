@@ -111,6 +111,17 @@ The extension's MCP entry is the hosted URL. Sign in when Gemini asks.
 Follow [llms-install.md](llms-install.md). Add the hosted URL, then sign in
 when Cline asks.
 
+### Arcade
+
+Register the hosted server as a [Remote MCP](https://docs.arcade.dev/en/operate/governance/remote-mcp-servers) server. Arcade cannot proxy the stdio npm launcher, so use the hosted URL only.
+
+1. Open [Arcade servers](https://app.arcade.dev/servers), choose Add Server, then Remote MCP.
+2. Set the ID to `blowhorn` and the URI to `https://mcp.blowhorn.ai/mcp` (Streamable HTTP).
+3. Under Advanced settings, choose OAuth2 authorization. Leave Client ID, Client Secret, Authorization URL and Token URL empty so Arcade uses dynamic client registration with PKCE, the same pattern as [Arcade's Atlassian remote MCP guide](https://docs.arcade.dev/en/operate/governance/remote-mcp-servers/atlassian).
+4. Save, complete the Blowhorn OAuth sign-in, then pick the tools in an MCP Gateway.
+
+The hosted tools are read-only: `getConnections`, `getEvents`, `getContentItem` and `listContentItems`. This server offers tools only: no prompts, resources or sampling. This is a connection you add in your Arcade project. It is not a public Arcade catalog listing.
+
 ## Example prompts
 
 These only read:
