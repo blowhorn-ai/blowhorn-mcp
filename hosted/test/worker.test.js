@@ -62,7 +62,7 @@ test("GET /healthz answers without calling Cloud", async (t) => {
   assert.strictEqual(post.res.headers.get("Allow"), "GET, HEAD");
 });
 
-test("only /mcp and the two protected resource metadata paths exist; every other path is a 404 and Cloud is never called", async (t) => {
+test("paths outside the route table are a 404 and Cloud is never called", async (t) => {
   const calls = mockFetch(t, () => assert.fail("Cloud was called"));
   const paths = [
     "/",

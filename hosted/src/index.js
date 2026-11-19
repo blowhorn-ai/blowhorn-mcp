@@ -18,7 +18,8 @@
  *
  * What the Worker itself keeps, because it is the only browser-facing edge
  * and the only flood control in front of Cloud:
- *  - the Origin allowlist on /mcp (public metadata is the one exception),
+ *  - the Origin allowlist on /mcp (public metadata and the OpenAI apps
+ *    challenge are the exceptions),
  *  - the per-address rate limit on every request it would carry, and the
  *    per-caller limit on a tools/call (src/ratelimit.js, one Durable Object,
  *    exported below; a missing binding fails closed),
@@ -205,6 +206,30 @@ async function metadata(request, env, path) {
   return new Response(JSON.stringify(protectedResourceMetadata()), { status: 200, headers });
 }
 
+/**
+ * OpenAI apps domain verification. The body is the OPENAI_APPS_CHALLENGE
+ * secret and nothing else. Unset or blank is the same 404 as an unknown
+ * path. Public, like metadata: no Origin check, no Cloud call, and no
+ * dependence on CLOUD_API_BASE. It spends the address limit the same way.
+ */
+async function openaiChallenge(request, env, path) {
+  const addressLimit = await refuses(env, "address", addressKey(request.headers.get("CF-Connecting-IP")));
+  if (addressLimit.unavailable) return unavailable();
+  if (addressLimit.refused) {
+    log({ outcome: "rate_limited", limit: "address" });
+    return refusal("address", {}, null, addressLimit.retryAfter);
+  }
+  const route = ROUTES[path];
+  if (!route.methods.includes(request.method)) {
+    return json(405, { error: "method not allowed" }, { Allow: route.methods.join(", ") });
+  }
+  const token = String(env.OPENAI_APPS_CHALLENGE ?? "").trim();
+  if (!token) return json(404, { error: "not found" });
+  const headers = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
+  if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+  return new Response(token, { status: 200, headers });
+}
+
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
@@ -216,6 +241,7 @@ export default {
     const route = Object.hasOwn(ROUTES, url.pathname) ? ROUTES[url.pathname] : null;
     if (!route) return json(404, { error: "not found" });
     if (route.kind === "metadata") return metadata(request, env, url.pathname);
+    if (route.kind === "openai-challenge") return openaiChallenge(request, env, url.pathname);
 
     const origin = request.headers.get("Origin");
     if (origin !== null && !allowedOrigins(env).includes(origin)) return rpcError(403, -32000, "Forbidden: this Origin is not allowed.");

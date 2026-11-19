@@ -46,6 +46,7 @@ authorize and no token endpoint.
 | `/mcp` | POST, GET, DELETE (OPTIONS answered here for allowed origins) | `https://cloud.blowhorn.ai/mcp` (Bearer forwarded; `WWW-Authenticate` rewritten). A GET with no usable Bearer token is answered here with the 401 challenge and is not forwarded |
 | `/.well-known/oauth-protected-resource/mcp` | GET, HEAD (OPTIONS answered here) | Answered here (RFC 9728) |
 | `/.well-known/oauth-protected-resource` | GET, HEAD (OPTIONS answered here) | Answered here (same document) |
+| `/.well-known/openai-apps-challenge` | GET, HEAD | Answered here from the `OPENAI_APPS_CHALLENGE` secret, or `404` when that secret is unset. See [OpenAI apps domain verification](#openai-apps-domain-verification) |
 
 Every other path is a `404` from the Worker and nothing is sent to Cloud.
 Another method on these paths is a `405` with `Allow`.
@@ -100,7 +101,7 @@ What crosses the Worker, both ways, is filtered by an allowlist:
   are served to any origin with `Access-Control-Allow-Origin: *`; that does
   not loosen `/mcp`.
 - **Rate limits.** Per network address on every request the Worker would
-  carry (`/mcp` and the metadata documents), and per caller on a `tools/call`;
+  carry (`/mcp`, the metadata documents, and the OpenAI apps challenge), and per caller on a `tools/call`;
   over either, `429` with `Retry-After`. See [Rate limits](#rate-limits).
 - **Logs.** Workers Logs holds only the Worker's own lines:
   `upstream_failed` (the outcome, the route and the error's type, never a
@@ -216,6 +217,31 @@ approval. Have a person sign in with a real MCP client against production
 too: the smoke's signed-in checks have not yet run in production, because the
 test account's email is not verified yet.
 
+## OpenAI apps domain verification
+
+OpenAI verifies an app's domain by fetching `/.well-known/openai-apps-challenge`.
+The Worker answers `GET` and `HEAD` on that path with the `OPENAI_APPS_CHALLENGE`
+secret: the trimmed value is the whole body, `Content-Type` is
+`text/plain; charset=utf-8`, and `Cache-Control` is `no-store`. `HEAD` sends
+those headers and no body. Any other method is `405` with `Allow: GET, HEAD`.
+The route is public (no Origin check), spends the per-address rate limit, and
+never calls Cloud, so it does not need `CLOUD_API_BASE`.
+
+Set the secret from `hosted/` (it is a Worker secret, not a var in `wrangler.jsonc`):
+
+```bash
+npx wrangler secret put OPENAI_APPS_CHALLENGE
+```
+
+Remove it:
+
+```bash
+npx wrangler secret delete OPENAI_APPS_CHALLENGE
+```
+
+When the secret is unset, or empty after trim, the path answers `404` with
+`{"error":"not found"}`, the same JSON as an unknown path.
+
 ## Rate limits
 
 Two limits guard the Worker's routes. Cloudflare's simple Workers Rate Limiting bindings
@@ -232,10 +258,11 @@ preflight are never limited.
 
 | Limit | Config key | Key | Allowed | Checked |
 |-------|------------|-----|---------|---------|
-| Per network address | `address` | `CF-Connecting-IP`; an IPv6 address by its /64 | 1200 requests per 60 s | First, on every `/mcp` and metadata request, before the token is read |
+| Per network address | `address` | `CF-Connecting-IP`; an IPv6 address by its /64 | 1200 requests per 60 s | First, on every `/mcp`, metadata, and OpenAI apps challenge request, before the token is read |
 | Per caller | `caller` | The hex SHA-256 of the bearer token, never the token | 60 tool calls per 60 s | Once the token and the body parse, before any Cloud call; only `tools/call` counts |
 
-The address limit counts every `/mcp` and protected resource metadata
+The address limit counts every `/mcp`, protected resource metadata, and
+OpenAI apps challenge
 request, with or without a token: it
 is the only bound on a client that rotates through made-up tokens, since
 each new token gets its own caller bucket. So one address can still send as
@@ -419,6 +446,7 @@ which resolves `cloudflare:workers` to the DurableObject stub in
 | File | What it holds |
 |------|---------------|
 | `test/worker.test.js` | Routes and methods, the Origin policy, the preflight, public metadata, the `CLOUD_API_BASE` guard |
+| `test/openai-challenge.test.js` | The OpenAI apps challenge: the secret as `text/plain`, `404` when unset or blank, `HEAD` with no body, `405` on `POST`, no Cloud call |
 | `test/proxy.test.js` | Cloud's challenge and metadata relayed verbatim, header filtering both ways, body fidelity, redirects, streaming, size bounds, 502 and 504 |
 | `test/oauth-contract.test.js` | The official MCP SDK OAuth client through the Worker: 401, discovery, registration, code with S256 and the canonical `resource`, token, `tools/list`, `tools/call` |
 | `test/ratelimit.test.js` | Both Durable Object limits, their config and README tables, the fail-closed paths |
