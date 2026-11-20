@@ -101,14 +101,15 @@ export function normalizeBase(raw) {
 }
 
 /**
- * The checked-in PRM schema for `base`. Production is held to it as is; for
- * another base only the pinned resource and issuer constants move.
+ * The checked-in PRM schema for `base`. A known public origin (production or
+ * staging, schemas/deployments.json) is held to it as is; for another base
+ * only the allowed resource and issuer values move.
  */
 export function prmSchema(base) {
-  if (base === PUBLIC_ORIGIN) return PRM_SCHEMA;
+  if (PRM_SCHEMA.properties.resource.enum.includes(`${base}/mcp`)) return PRM_SCHEMA;
   const schema = structuredClone(PRM_SCHEMA);
-  schema.properties.resource.const = `${base}/mcp`;
-  delete schema.properties.authorization_servers.items.const;
+  schema.properties.resource.enum = [`${base}/mcp`];
+  delete schema.properties.authorization_servers.items.enum;
   return schema;
 }
 

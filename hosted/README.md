@@ -486,26 +486,33 @@ with a real client, must pass before any cutover.
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `CLOUD_API_BASE` | `https://cloud.blowhorn.ai` | Cloud base; must be exactly `https://cloud.blowhorn.ai`, else the Worker refuses to serve |
+| `CLOUD_API_BASE` | `https://cloud.blowhorn.ai` | Cloud base. With `PUBLIC_ORIGIN` it must be exactly one pair in `schemas/deployments.json` (see [Staging](#staging)), else the Worker refuses to serve (`/healthz` 500, no metadata, no Cloud call) |
+| `PUBLIC_ORIGIN` | `https://mcp.blowhorn.ai` | The public origin clients connect to. Names the metadata `resource` (`<origin>/mcp`), the `resource_metadata` URL in the 401 challenge and `X-Forwarded-Mcp-Resource`. Never taken from the inbound Host |
 | `ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call `/mcp` |
 | `RATE_LIMITS` | (required) | JSON string: `address` and `caller` limits, enforced by the `RATE_LIMITER` Durable Object. See [Rate limits](#rate-limits) |
 
 ## Deploy
 
 CI deploys on every push to `master` that touches `hosted/**`
-(`.github/workflows/hosted-deploy.yml`, `production` environment), runs
-`make hosted-deploy`, then smoke-tests `/healthz` (200) and unauthenticated
-`/mcp` (401). That narrow smoke test does not check the challenge's
-`resource_metadata` or the metadata document; see [Before cutover](#before-cutover).
-After the deploy, run the fuller [Post-release smoke](#post-release-smoke) by
-hand. The workflow can also be run by hand with workflow_dispatch. The manual
-path below still works.
+(`.github/workflows/hosted-deploy.yml`), as two independent jobs. The
+production job (`production` environment) runs `make hosted-deploy`, then
+smoke-tests `/healthz` (200), unauthenticated `/mcp` (401), and that the
+metadata still names `https://cloud.blowhorn.ai` and
+`https://mcp.blowhorn.ai/mcp`. The staging job (its own concurrency group, not
+the `production` environment) runs `make hosted-deploy-staging`; see
+[Staging](#staging). A failure in one never skips or undoes the other. The
+smoke tests do not check the challenge's `resource_metadata` on production; see
+[Before cutover](#before-cutover). After the deploy, run the fuller
+[Post-release smoke](#post-release-smoke) by hand. The workflow can also be run
+by hand with workflow_dispatch.
 
-From the VM only, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
-the environment:
+The sanctioned path is that workflow. The make targets are the emergency
+manual path, run from a machine that has `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` in the environment:
 
 ```bash
-make hosted-deploy   # Node check, npm ci, hosted-check, then the locked wrangler deploy
+make hosted-deploy          # production: Node check, npm ci, hosted-check, then the locked wrangler deploy (no --env)
+make hosted-deploy-staging  # the same checks, then wrangler deploy --env staging
 ```
 
 wrangler is a pinned devDependency (`package.json`, locked in
@@ -532,8 +539,42 @@ Node versions are split:
   warns `EBADENGINE` for wrangler and two of its dependencies;
   `make hosted-install` keeps that a warning.
 
-`wrangler.jsonc` has no routes; the `mcp.blowhorn.ai` custom domain is
-attached through the Cloudflare API. `workers_dev` and preview URLs are off.
+`wrangler.jsonc` has no routes at the top level (production); the
+`mcp.blowhorn.ai` custom domain is attached through the Cloudflare API.
+`workers_dev` and preview URLs are off in both environments.
+
+### Staging
+
+A second Worker, `blowhorn-mcp-hosted-staging` (`env.staging` in
+`wrangler.jsonc`, the same code), serves **`https://mcp-staging.blowhorn.ai/mcp`**
+in front of staging Cloud, so a client can be tested against the staging
+authorization server. Its metadata at
+`https://mcp-staging.blowhorn.ai/.well-known/oauth-protected-resource` has
+`resource` `https://mcp-staging.blowhorn.ai/mcp` and `authorization_servers`
+`["https://staging-cloud.layer5.io"]`; its 401 challenge names the staging
+metadata URL, and the requests it carries go to `https://staging-cloud.layer5.io/mcp`
+with `X-Forwarded-Mcp-Resource` set to the staging resource.
+
+- **Known pairs.** `schemas/deployments.json` (shape in
+  `schemas/deployments.schema.json`) lists the only allowed
+  (`CLOUD_API_BASE`, `PUBLIC_ORIGIN`) pairs: production and staging. A missing
+  var is the production value. A mismatched pair, an unknown base or an unknown
+  origin makes the Worker refuse to serve. `wrangler.jsonc` and the code are
+  held to that file by `test/deployments.test.js`, and the protected resource
+  schema allows only those two resources and issuers.
+- **Isolation.** The separate Worker name is a separate `RateLimiter` Durable
+  Object namespace, so no rate limit state is shared with production. Vars,
+  bindings and migrations are declared again in `env.staging` (wrangler does not
+  inherit them); the limits equal production's. Production's `wrangler deploy`
+  (no `--env`) publishes exactly what it did before.
+- **Deploy.** `make hosted-deploy-staging`, or the staging job above. The
+  custom domain is attached by the deploy (`routes` with `custom_domain`), which
+  needs the CI Cloudflare token to be allowed to edit DNS and Workers routes on
+  the `blowhorn.ai` zone. If it is not, the staging job fails and production is
+  unaffected.
+- **Audience.** Token validation stays with Cloud. Cloud must accept tokens whose
+  audience is `https://mcp-staging.blowhorn.ai/mcp` (a Cloud-side allowlist);
+  the Worker neither checks nor relaxes that.
 
 ### Post-release smoke
 

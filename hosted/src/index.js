@@ -78,7 +78,7 @@ function isToolsCall(message) {
 }
 
 /** Carries the request to Cloud and returns its answer, or the failure's response. */
-async function carry({ base, path, request, headers, body, cors, route }) {
+async function carry({ env, base, path, request, headers, body, cors, route }) {
   const result = await forward({ base, path, method: request.method, headers, body });
   if (result.failure) {
     log({ event: "upstream_failed", outcome: result.failure, route: route.kind, error: result.error });
@@ -87,7 +87,7 @@ async function carry({ base, path, request, headers, body, cors, route }) {
   const out = returnHeaders(result.response.headers);
   // Point clients at this origin's RFC 9728 document, not Cloud's tenant host string.
   if (route.kind === "mcp" && result.response.status === 401) {
-    out.set("WWW-Authenticate", publicChallenge(result.response.headers.get("WWW-Authenticate")));
+    out.set("WWW-Authenticate", publicChallenge(result.response.headers.get("WWW-Authenticate"), env));
   }
   for (const [k, v] of Object.entries(cors)) out.set(k, v);
   return new Response(request.method === "HEAD" ? null : result.response.body, { status: result.response.status, headers: out });
@@ -119,7 +119,7 @@ async function mcp(request, env, origin) {
     return rpcError(405, -32000, "Method not allowed.", { Allow: MCP_METHODS, ...cors });
   }
   const base = cloudBase(env);
-  if (!base) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", cors);
+  if (!base) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE and PUBLIC_ORIGIN are not a known pair.", cors);
 
   let body;
   if (request.method === "POST") {
@@ -170,12 +170,12 @@ async function mcp(request, env, origin) {
       {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
-        "WWW-Authenticate": publicChallenge(),
+        "WWW-Authenticate": publicChallenge("", env),
         ...cors,
       },
     );
   }
-  return carry({ base, path: "/mcp", request, headers: forwardHeaders(request.headers, REQUEST_HEADERS), body, cors, route: ROUTES["/mcp"] });
+  return carry({ env, base, path: "/mcp", request, headers: forwardHeaders(request.headers, REQUEST_HEADERS, env), body, cors, route: ROUTES["/mcp"] });
 }
 
 /** A public RFC 9728 document answered here (not forwarded to Cloud), readable by any origin. */
@@ -196,14 +196,14 @@ async function metadata(request, env, path) {
   if (!ROUTES[path].methods.includes(request.method)) {
     return rpcError(405, -32000, "Method not allowed.", { Allow: METADATA_METHODS, ...METADATA_CORS });
   }
-  if (!cloudBase(env)) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE is not an https URL.", METADATA_CORS);
+  if (!cloudBase(env)) return rpcError(500, -32603, "Gateway misconfigured: CLOUD_API_BASE and PUBLIC_ORIGIN are not a known pair.", METADATA_CORS);
   const headers = {
     "Content-Type": "application/json",
     "Cache-Control": "public, max-age=300",
     ...METADATA_CORS,
   };
   if (request.method === "HEAD") return new Response(null, { status: 200, headers });
-  return new Response(JSON.stringify(protectedResourceMetadata()), { status: 200, headers });
+  return new Response(JSON.stringify(protectedResourceMetadata(env)), { status: 200, headers });
 }
 
 /**

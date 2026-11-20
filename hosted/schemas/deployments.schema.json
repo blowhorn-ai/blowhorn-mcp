@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcp.blowhorn.ai/schemas/deployments.schema.json",
+  "title": "HostedDeployments",
+  "description": "The known (Cloud base, public origin) pairs the Worker serves. A deploy names its pair with the CLOUD_API_BASE and PUBLIC_ORIGIN vars; any other combination makes the Worker refuse to serve. Each value is a bare https origin: no path, no trailing slash. Exactly one pair is the default, used when the vars are missing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deployments"],
+  "properties": {
+    "deployments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "cloudBase", "publicOrigin"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z]+$" },
+          "default": { "type": "boolean" },
+          "cloudBase": { "type": "string", "pattern": "^https://[a-z0-9.-]+$" },
+          "publicOrigin": { "type": "string", "pattern": "^https://[a-z0-9.-]+$" }
+        }
+      }
+    }
+  }
+}
