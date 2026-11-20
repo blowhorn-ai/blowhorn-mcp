@@ -33,8 +33,9 @@ Cloud owns the design-doc deployment URL and preferred token audience
 token validation, and the tools. The Worker serves RFC 9728 protected resource
 metadata locally (`src/metadata.js`) with `resource` equal to the public connect
 URL `https://mcp.blowhorn.ai/mcp` (required by the MCP OAuth client) and
-`authorization_servers` naming Cloud's Blowhorn issuer
-(`https://cloud.blowhorn.ai/hydra`). It rewrites Cloud's `401` `WWW-Authenticate`
+`authorization_servers` naming the authorization server advertised in
+`https://mcp.blowhorn.ai/.well-known/oauth-protected-resource`. It rewrites
+Cloud's `401` `WWW-Authenticate`
 so `resource_metadata` points at this origin, and forwards every Bearer token to
 Cloud's `/mcp` unchanged.
 This Worker still serves no authorization server metadata, no registration, no
@@ -179,7 +180,8 @@ do not merge this change before.** The Worker does not enforce any of it.
 3. **Metadata at both paths.** `GET /.well-known/oauth-protected-resource/mcp`
    and `GET /.well-known/oauth-protected-resource` on this Worker answer `200`
    JSON with `resource` exactly `https://mcp.blowhorn.ai/mcp` and
-   `authorization_servers` naming `https://cloud.blowhorn.ai/hydra`, which
+   `authorization_servers` naming the authorization server advertised in
+   `https://mcp.blowhorn.ai/.well-known/oauth-protected-resource`, which
    serves discovery, registration, authorize (S256, one `resource` equal to
    the public resource, else `invalid_target`) and token. Neither redirects.
 4. **Tokens.** An MCP OAuth token is bound to `https://mcp.blowhorn.ai/mcp` and
@@ -457,11 +459,11 @@ which resolves `cloudflare:workers` to the DurableObject stub in
 
 **`test/oauth-contract.test.js` is a fake-upstream contract test.** Its Cloud is
 a small fake (`test/support/harness.js`) that implements the contract in
-[Before cutover](#before-cutover). It is **not** real Ory Hydra or Kratos, not
-Blowhorn Cloud, not Gemini CLI, and not an end-to-end test of anything
+[Before cutover](#before-cutover). It is **not** Blowhorn Cloud, not
+Gemini CLI, and not an end-to-end test of anything
 deployed. It shows that the Worker carries what the contract says, and that
 the official SDK completes OAuth through it. It cannot show that Cloud serves
-the contract. The real local-stack run (Hydra, Kratos and Cloud together) is a
+the contract. The real local-stack run of Cloud and its identity stack is a
 separate gate owned by the Cloud change, and it, plus a person signing in
 with a real client, must pass before any cutover.
 
@@ -556,7 +558,7 @@ any failure:
 
 | Check | Expects |
 |-------|---------|
-| `prm`, `prm-root`, `prm-same` | Both metadata paths `200`, the same document, valid against `schemas/protected-resource.schema.json`, `resource` `<base>/mcp` (for production also `authorization_servers` `[https://cloud.blowhorn.ai/hydra]`) |
+| `prm`, `prm-root`, `prm-same` | Both metadata paths `200`, the same document, valid against `schemas/protected-resource.schema.json`, `resource` `<base>/mcp` (for production, `authorization_servers` matches the issuer advertised in `https://mcp.blowhorn.ai/.well-known/oauth-protected-resource`) |
 | `as-metadata`, `as-metadata-root` | The issuer's RFC 8414 metadata at the path-inserted URL (`<origin>/.well-known/oauth-authorization-server/<issuer path>`) and at the origin root: `200`, valid against the SDK's RFC 8414 schema, `issuer` equal to the issuer the protected resource metadata names, with a `registration_endpoint` (for production `https://cloud.blowhorn.ai/oauth2/register`) |
 | `healthz` | `200` |
 | `mcp-get-401`, `mcp-post-401` | `GET /mcp` and `POST /mcp` `initialize` with no token: `401` and a Bearer challenge with `resource_metadata="<base>/.well-known/oauth-protected-resource/mcp"` |
