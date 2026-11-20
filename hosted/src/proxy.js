@@ -23,18 +23,25 @@
  */
 import pkg from "../package.json" with { type: "json" };
 import { definition } from "./errors.js";
+import deployments from "../schemas/deployments.json" with { type: "json" };
 
 export const VERSION = pkg.version;
 export const USER_AGENT = `blowhorn-mcp-hosted/${VERSION}`;
-export const DEFAULT_BASE = "https://cloud.blowhorn.ai";
-/** Public origin clients connect to (custom domain on this Worker). */
-export const PUBLIC_ORIGIN = "https://mcp.blowhorn.ai";
-/** Protected resource identifier for clients of this Worker (MCP SDK match). */
+/**
+ * The known (Cloud base, public origin) pairs, from schemas/deployments.json
+ * (shape: schemas/deployments.schema.json, held by test/deployments.test.js).
+ * A deploy picks its pair with CLOUD_API_BASE and PUBLIC_ORIGIN; the default
+ * pair, used when a var is missing, is production.
+ */
+export const DEPLOYMENTS = Object.freeze(deployments.deployments.map((d) => Object.freeze({ ...d })));
+const PRODUCTION = DEPLOYMENTS.find((d) => d.default);
+export const DEFAULT_BASE = PRODUCTION.cloudBase;
+/** Production public origin clients connect to (custom domain on this Worker). */
+export const PUBLIC_ORIGIN = PRODUCTION.publicOrigin;
+/** Production protected resource identifier (MCP SDK match). */
 export const PUBLIC_RESOURCE = `${PUBLIC_ORIGIN}/mcp`;
 export const TIMEOUT_MS = 20_000;
 export const MAX_REQUEST_BYTES = 1024 * 1024;
-
-const ALLOWED_BASES = [DEFAULT_BASE];
 
 /**
  * The only paths the gateway serves. `/mcp` is carried to the same path on
@@ -61,24 +68,37 @@ export const REQUEST_HEADERS = Object.freeze(["Authorization", "Content-Type", "
 export const RESPONSE_HEADERS = Object.freeze(["Content-Type", "WWW-Authenticate", "Mcp-Session-Id", "Mcp-Protocol-Version", "Allow", "Retry-After", "Cache-Control", "Link"]);
 
 /**
- * The Cloud base URL from `env.CLOUD_API_BASE`, without a trailing slash, or
- * null when it is not exactly an allowed origin (the gateway then refuses to
- * serve), so a changed variable can never send credentials to another host.
+ * The deployment `env` names: `{ name, cloudBase, publicOrigin, resource }`
+ * (resource is `<publicOrigin>/mcp`), or null unless `CLOUD_API_BASE` and
+ * `PUBLIC_ORIGIN` together are exactly one known pair (a missing var is the
+ * production value). The gateway then refuses to serve, so a changed variable
+ * can never send credentials to another host, advertise a guessed host, or
+ * mix one environment's Cloud with another's public origin. The public origin
+ * is only ever this env value, never the inbound Host.
  */
-export function cloudBase(env = {}) {
-  const raw = String(env.CLOUD_API_BASE || DEFAULT_BASE).replace(/\/+$/, "");
-  return ALLOWED_BASES.includes(raw) ? raw : null;
+export function deployment(env = {}) {
+  const base = String(env.CLOUD_API_BASE || DEFAULT_BASE).replace(/\/+$/, "");
+  const origin = String(env.PUBLIC_ORIGIN || PUBLIC_ORIGIN).replace(/\/+$/, "");
+  const found = DEPLOYMENTS.find((d) => d.cloudBase === base && d.publicOrigin === origin);
+  return found ? Object.freeze({ name: found.name, cloudBase: found.cloudBase, publicOrigin: found.publicOrigin, resource: `${found.publicOrigin}/mcp` }) : null;
 }
 
-/** The headers to send Cloud: `names` from `inbound`, plus the gateway's own User-Agent and X-Forwarded-Mcp-Resource. */
-export function forwardHeaders(inbound, names) {
+/** The deployment's Cloud base URL, or null when the env is not a known pair (see deployment). */
+export function cloudBase(env = {}) {
+  return deployment(env)?.cloudBase ?? null;
+}
+
+/** The headers to send Cloud: `names` from `inbound`, plus the gateway's own User-Agent and X-Forwarded-Mcp-Resource (the env's public resource). */
+export function forwardHeaders(inbound, names, env = {}) {
+  const d = deployment(env);
+  if (!d) throw new Error("forwardHeaders: env is not a known deployment");
   const out = new Headers();
   for (const name of names) {
     const value = inbound.get(name);
     if (value !== null) out.set(name, value);
   }
   out.set("User-Agent", USER_AGENT);
-  out.set("X-Forwarded-Mcp-Resource", PUBLIC_RESOURCE);
+  out.set("X-Forwarded-Mcp-Resource", d.resource);
   return out;
 }
 

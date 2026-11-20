@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // blowhorn-mcp-hosted: the interim MCP transport proxy (see README.md).
-// Deployed with `make hosted-deploy` from the VM only. No routes block: the
-// mcp.blowhorn.ai custom domain is attached through the Cloudflare API.
+// Production is the top level of this file: `wrangler deploy --env ""`
+// (`make hosted-deploy`). No routes block there: the mcp.blowhorn.ai custom
+// domain is attached through the Cloudflare API. env.staging is a second
+// Worker, blowhorn-mcp-hosted-staging, on https://mcp-staging.blowhorn.ai in
+// front of staging Cloud (`make hosted-deploy-staging`). Both deploy from
+// .github/workflows/hosted-deploy.yml on merge to master.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "blowhorn-mcp-hosted",
@@ -13,7 +17,11 @@
   // Wrangler's anonymous usage telemetry is off for every deploy from here.
   "send_metrics": false,
   "vars": {
+    // The (CLOUD_API_BASE, PUBLIC_ORIGIN) pair must be one of the pairs in
+    // schemas/deployments.json, else the Worker refuses to serve. Production
+    // is the default pair; PUBLIC_ORIGIN is spelled out so the pair is plain.
     "CLOUD_API_BASE": "https://cloud.blowhorn.ai",
+    "PUBLIC_ORIGIN": "https://mcp.blowhorn.ai",
     "ALLOWED_ORIGINS": "",
     // Rate limits (src/ratelimit.js, schemas/rate-limits.schema.json,
     // README.md, Rate limits). JSON, parsed at request time. A refused
@@ -53,6 +61,46 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }
   ],
+  // The staging Worker. wrangler does not inherit vars, durable_objects or
+  // migrations into an environment, so each is declared again here. The
+  // separate Worker name gives staging its own RateLimiter Durable Object
+  // namespace: no rate limit state is shared with production. Staging's
+  // limits are production's; test/deployments.test.js holds them equal.
+  "env": {
+    "staging": {
+      "name": "blowhorn-mcp-hosted-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      // The custom domain is created by the deploy. The CI Cloudflare token
+      // needs DNS and Workers Routes edit on the blowhorn.ai zone for that;
+      // without it the staging job fails and production is unaffected (the
+      // jobs are independent).
+      "routes": [
+        { "pattern": "mcp-staging.blowhorn.ai", "custom_domain": true }
+      ],
+      "vars": {
+        "CLOUD_API_BASE": "https://staging-cloud.layer5.io",
+        "PUBLIC_ORIGIN": "https://mcp-staging.blowhorn.ai",
+        "ALLOWED_ORIGINS": "",
+        "RATE_LIMITS": "{\"address\":{\"limit\":1200,\"period\":60},\"caller\":{\"limit\":60,\"period\":60}}"
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER", "class_name": "RateLimiter" }
+        ]
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }
+      ],
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "invocation_logs": false
+        }
+      }
+    }
+  },
   // Invocation logs (Cloudflare's per-request metadata) are off, so Workers
   // Logs holds only the gateway's explicit console lines (README.md, Logs).
   "observability": {

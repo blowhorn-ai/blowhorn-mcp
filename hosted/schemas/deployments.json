@@ -1,0 +1,6 @@
+{
+  "deployments": [
+    { "name": "production", "default": true, "cloudBase": "https://cloud.blowhorn.ai", "publicOrigin": "https://mcp.blowhorn.ai" },
+    { "name": "staging", "cloudBase": "https://staging-cloud.layer5.io", "publicOrigin": "https://mcp-staging.blowhorn.ai" }
+  ]
+}

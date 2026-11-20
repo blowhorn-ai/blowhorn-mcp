@@ -17,7 +17,7 @@
  * The document is pinned by hosted/schemas/protected-resource.schema.json and
  * held by test/metadata.test.js.
  */
-import { DEFAULT_BASE, PUBLIC_ORIGIN, PUBLIC_RESOURCE } from "./proxy.js";
+import { DEFAULT_BASE, PUBLIC_ORIGIN, PUBLIC_RESOURCE, deployment } from "./proxy.js";
 
 export { PUBLIC_ORIGIN, PUBLIC_RESOURCE };
 /** Cloud's /mcp path the Worker forwards to (design canonical deployment). */
@@ -27,17 +27,26 @@ export const AUTHORIZATION_SERVER = DEFAULT_BASE;
 /** Path-inserted and root RFC 9728 paths this Worker serves. */
 export const PRM_PATH = "/.well-known/oauth-protected-resource/mcp";
 export const PRM_ROOT = "/.well-known/oauth-protected-resource";
-/** Absolute metadata URL named in WWW-Authenticate. */
+/** Production's absolute metadata URL named in WWW-Authenticate. */
 export const PRM_URL = `${PUBLIC_ORIGIN}${PRM_PATH}`;
+
+/** The env's deployment (src/proxy.js deployment); throws when it is not a known pair, which callers have already refused. */
+function resolve(env) {
+  const d = deployment(env);
+  if (!d) throw new Error("env is not a known deployment");
+  return d;
+}
 
 /**
  * The protected resource metadata document. `resource` is the public Worker
  * URL clients connect to; `authorization_servers` is Cloud's Blowhorn issuer.
+ * Both come from the env's known pair; the default env is production.
  */
-export function protectedResourceMetadata() {
+export function protectedResourceMetadata(env = {}) {
+  const d = resolve(env);
   return Object.freeze({
-    resource: PUBLIC_RESOURCE,
-    authorization_servers: Object.freeze([AUTHORIZATION_SERVER]),
+    resource: d.resource,
+    authorization_servers: Object.freeze([d.cloudBase]),
     bearer_methods_supported: Object.freeze(["header"]),
     resource_name: "Blowhorn MCP",
   });
@@ -49,16 +58,17 @@ export function protectedResourceMetadata() {
  * are kept. When the header is missing or not a Bearer challenge, returns a
  * fresh challenge that only names the metadata URL.
  */
-export function publicChallenge(wwwAuthenticate) {
+export function publicChallenge(wwwAuthenticate, env = {}) {
+  const prmUrl = `${resolve(env).publicOrigin}${PRM_PATH}`;
   const value = String(wwwAuthenticate || "").trim();
   if (!value || !/^Bearer\b/i.test(value)) {
-    return `Bearer resource_metadata="${PRM_URL}"`;
+    return `Bearer resource_metadata="${prmUrl}"`;
   }
   if (/resource_metadata\s*=/i.test(value)) {
     return value.replace(
       /resource_metadata\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,]+)/i,
-      `resource_metadata="${PRM_URL}"`,
+      `resource_metadata="${prmUrl}"`,
     );
   }
-  return `${value}, resource_metadata="${PRM_URL}"`;
+  return `${value}, resource_metadata="${prmUrl}"`;
 }

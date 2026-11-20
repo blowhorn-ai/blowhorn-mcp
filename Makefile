@@ -11,7 +11,7 @@ TAG     := v$(VERSION)
 REQUIRE_PLAIN_VERSION = @printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "$@: version $(VERSION) in package.json is not plain X.Y.Z"; exit 1; }
 
 .PHONY: install generate check check-drift validate check-copy check-skill check-facts check-logo test check-pack schemas-refresh release publish \
-	hosted-install hosted-check hosted-smoke hosted-schemas-refresh hosted-require-node hosted-deploy
+	hosted-install hosted-check hosted-smoke hosted-schemas-refresh hosted-require-node hosted-deploy hosted-deploy-staging
 
 ## install: dev tooling (Ajv) into tools/node_modules. The root package has
 ## "os": ["darwin"], which makes npm refuse any install at the root on other
@@ -104,15 +104,27 @@ hosted-schemas-refresh: hosted/node_modules/@modelcontextprotocol/sdk/package.js
 hosted-require-node:
 	@node hosted/scripts/require-node.js
 
-## hosted-deploy: deploy the interim transport proxy Worker with the locked wrangler in
-## hosted/node_modules, never a download. It always reinstalls from
-## hosted/package-lock.json first, so a node_modules left from before a lock
-## bump never deploys another wrangler. Run from the VM only; needs
-## CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the environment.
+## hosted-deploy: deploy the production interim transport proxy Worker with the
+## locked wrangler in hosted/node_modules, never a download. It always
+## reinstalls from hosted/package-lock.json first, so a node_modules left from
+## before a lock bump never deploys another wrangler. Production only: wrangler
+## deploy --env "" (the top level), so a CLOUDFLARE_ENV left in the environment
+## can never turn this target into another Worker's deploy. The sanctioned path is .github/workflows/hosted-deploy.yml
+## on merge to master (or workflow_dispatch); this target is the emergency
+## manual path and needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the
+## environment.
 hosted-deploy: hosted-require-node
 	$(MAKE) hosted-install
 	$(MAKE) hosted-check
-	cd hosted && ./node_modules/.bin/wrangler deploy
+	cd hosted && ./node_modules/.bin/wrangler deploy --env ""
+
+## hosted-deploy-staging: the same checks, then wrangler deploy --env staging
+## (the blowhorn-mcp-hosted-staging Worker in front of staging Cloud). Same
+## paths and credentials as hosted-deploy; it never touches production.
+hosted-deploy-staging: hosted-require-node
+	$(MAKE) hosted-install
+	$(MAKE) hosted-check
+	cd hosted && ./node_modules/.bin/wrangler deploy --env staging
 
 ## release: tag $(TAG) on master and create its GitHub release. The Gemini
 ## extensions gallery reads releases, and the tag must equal gemini-extension.json's version.

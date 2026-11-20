@@ -37,7 +37,7 @@ import { Validator } from "@cfworker/json-schema";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { OAuthClientInformationFullSchema, OAuthMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { DEFAULT_BASE, VERSION } from "../src/proxy.js";
+import { DEFAULT_BASE, DEPLOYMENTS, VERSION } from "../src/proxy.js";
 import { AUTHORIZATION_SERVER, PRM_PATH, PRM_ROOT, PUBLIC_ORIGIN, protectedResourceMetadata } from "../src/metadata.js";
 
 const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -101,14 +101,17 @@ export function normalizeBase(raw) {
 }
 
 /**
- * The checked-in PRM schema for `base`. Production is held to it as is; for
- * another base only the pinned resource and issuer constants move.
+ * The checked-in PRM schema for `base`. A known public origin (production or
+ * staging, schemas/deployments.json) is held to it as is, its resource to its
+ * own issuer; for another base only the allowed resource and issuer values
+ * move, and the known-pair constraint is dropped.
  */
 export function prmSchema(base) {
-  if (base === PUBLIC_ORIGIN) return PRM_SCHEMA;
+  if (PRM_SCHEMA.properties.resource.enum.includes(`${base}/mcp`)) return PRM_SCHEMA;
   const schema = structuredClone(PRM_SCHEMA);
-  schema.properties.resource.const = `${base}/mcp`;
-  delete schema.properties.authorization_servers.items.const;
+  schema.properties.resource.enum = [`${base}/mcp`];
+  delete schema.properties.authorization_servers.items.enum;
+  delete schema.oneOf;
   return schema;
 }
 
@@ -161,6 +164,8 @@ export async function checkProtectedResource(ctx) {
   const { base, fetch, report } = ctx;
   const validator = new Validator(prmSchema(base));
   const expected = protectedResourceMetadata();
+  // A known public origin is held to its own issuer (schemas/deployments.json).
+  const known = DEPLOYMENTS.find((d) => d.publicOrigin === base);
   const docs = [];
   for (const [name, p] of [["prm", PRM_PATH], ["prm-root", PRM_ROOT]]) {
     const res = await fetch(`${base}${p}`, { headers: { Accept: "application/json" } });
@@ -172,7 +177,7 @@ export async function checkProtectedResource(ctx) {
       const result = validator.validate(doc);
       if (!result.valid) problems.push(`schema: ${schemaErrors(result)}`);
       if (doc.resource !== `${base}/mcp`) problems.push(`resource ${doc.resource} is not ${base}/mcp`);
-      if (base === PUBLIC_ORIGIN && JSON.stringify(doc.authorization_servers) !== JSON.stringify(expected.authorization_servers)) problems.push(`authorization_servers is not [${AUTHORIZATION_SERVER}]`);
+      if (known && JSON.stringify(doc.authorization_servers) !== JSON.stringify([known.cloudBase])) problems.push(`authorization_servers is not [${known.cloudBase}]`);
       if (JSON.stringify(doc.bearer_methods_supported) !== JSON.stringify(expected.bearer_methods_supported)) problems.push("bearer_methods_supported is not [header]");
       if (doc.resource_name !== expected.resource_name) problems.push(`resource_name is not ${expected.resource_name}`);
     }
