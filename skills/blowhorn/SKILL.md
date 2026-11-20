@@ -1,6 +1,6 @@
 ---
 name: blowhorn
-description: Use when the user wants to see Blowhorn connections, events or content through the hosted MCP server at https://mcp.blowhorn.ai/mcp. Covers signing in with OAuth and reading only.
+description: Use when the user wants to see Blowhorn connections, events, content or schedules through the hosted MCP server at https://mcp.blowhorn.ai/mcp. Covers signing in with OAuth and reading only.
 ---
 
 # Blowhorn
@@ -10,7 +10,7 @@ the hosted server at <https://mcp.blowhorn.ai/mcp>. The user signs in with a
 Blowhorn account through OAuth. The client registers itself, so there is no
 key to copy and no server to start.
 
-The hosted server is read-only today. It exposes four tools:
+The hosted server is read-only today. It exposes six tools:
 
 | Tool | What it returns |
 |------|-----------------|
@@ -18,6 +18,8 @@ The hosted server is read-only today. It exposes four tools:
 | `getEvents` | Activity events. |
 | `getContentItem` | One content item. |
 | `listContentItems` | Content items. |
+| `listSchedules` | Schedules. |
+| `getScheduleById` | One schedule. |
 
 ## How to work
 
@@ -43,6 +45,8 @@ These only read, so they are safe to run as asked:
 - "Show my Blowhorn connections."
 - "List my content items."
 - "What events do I have?"
+- "List my schedules."
+- "Show one schedule by its id."
 - "Show one content item and tell me its state."
 
 ## What to refuse
@@ -56,4 +60,5 @@ These only read, so they are safe to run as asked:
 
 - MCP server reference: <https://blowhorn.ai/docs/reference/mcp-server/>
 - Connect an MCP client: <https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/>
+- Privacy: <https://blowhorn.ai/legal/privacy/>
 - Support: <https://blowhorn.ai/docs/reference/support/>
