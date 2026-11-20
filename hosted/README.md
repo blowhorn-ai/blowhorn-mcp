@@ -561,7 +561,7 @@ any failure:
 | `healthz` | `200` |
 | `mcp-get-401`, `mcp-post-401` | `GET /mcp` and `POST /mcp` `initialize` with no token: `401` and a Bearer challenge with `resource_metadata="<base>/.well-known/oauth-protected-resource/mcp"` |
 | `dcr`, `dcr-cleanup` | Registration of a public native client with a loopback redirect: `201`, a `client_id`, `token_endpoint_auth_method` `none` and no `client_secret`; then an RFC 7592 delete if the answer offers one |
-| `mcp-token-*` | With a token: the official SDK client's `initialize` negotiates `2025-11-25`, `tools/list` is exactly the six read tools (`listContentItems`, `getContentItem`, `getEvents`, `getConnections`, `listSchedules`, `getScheduleById`), and one read `tools/call` succeeds |
+| `mcp-token-*` | With a token: the official SDK client's `initialize` negotiates `2025-11-25`, `tools/list` is exactly the six read tools (`listContentItems`, `getContentItem`, `getEvents`, `getConnections`, `listSchedules`, `getScheduleById`), plus `getPlatformSessions` once Cloud serves it, and one read `tools/call` succeeds |
 | `user-login`, `user-consent`, `user-authorize`, `user-token` | With the test account and no MCP token: an authorization code + PKCE (S256) grant for the client `dcr` registered, with no browser (see [Test account sign-in](#test-account-sign-in)). Sign-in sets a session cookie, consent is accepted, the code arrives on `http://127.0.0.1:8976/oauth/callback` with the `state` sent, and the `token_endpoint` answers `200` with a Bearer `access_token` (if it is a JWT, its `aud` includes `<base>/mcp`) |
 | `user-token-*` | The `mcp-token-*` checks with that access token |
 | `cloud-token-*` | The same through a legacy Cloud API token, labeled as that path |

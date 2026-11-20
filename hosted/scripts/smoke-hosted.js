@@ -49,6 +49,12 @@ export const REDIRECT_URI = "http://127.0.0.1:8976/oauth/callback";
 export const EXPECTED_PROTOCOL_VERSION = "2025-11-25";
 /** The read tools Cloud's /mcp serves. Missing or extra tools fail the check. */
 export const EXPECTED_TOOLS = Object.freeze(["listContentItems", "getContentItem", "getEvents", "getConnections", "listSchedules", "getScheduleById"]);
+/**
+ * Read tools Cloud may add without the check failing: listed or not, both pass.
+ * `getPlatformSessions` ("where is this social account signed in?") joins the
+ * set when Cloud serves it. Anything else beyond EXPECTED_TOOLS still fails.
+ */
+export const OPTIONAL_TOOLS = Object.freeze(["getPlatformSessions"]);
 /** A resource that must not be accepted at https://mcp.blowhorn.ai/mcp. Used as the default wrong-audience mint. */
 export const WRONG_AUDIENCE_RESOURCE = "https://cloud.blowhorn.ai/mcp";
 /** Tried in order for the one read tools/call. */
@@ -850,9 +856,11 @@ export async function checkSignedIn(ctx, label, token) {
     }
     const names = tools.map((t) => t.name);
     const missing = EXPECTED_TOOLS.filter((n) => !names.includes(n));
-    const extra = names.filter((n) => !EXPECTED_TOOLS.includes(n));
+    const extra = names.filter((n) => !EXPECTED_TOOLS.includes(n) && !OPTIONAL_TOOLS.includes(n));
+    // A tool Cloud may add must carry the organization selector, as the others do: tenancy is Cloud's, chosen per call by the client.
+    const noSelector = tools.filter((t) => OPTIONAL_TOOLS.includes(t.name) && !t.inputSchema?.properties?.organizationId).map((t) => t.name);
     const detail = `tools/list 200 tools=${names.join(",")}`;
-    if (missing.length || extra.length) report.fail(`${label}-tools-list`, `${detail} (${[missing.length && `missing ${missing.join(",")}`, extra.length && `extra ${extra.join(",")}`].filter(Boolean).join("; ")})`);
+    if (missing.length || extra.length || noSelector.length) report.fail(`${label}-tools-list`, `${detail} (${[missing.length && `missing ${missing.join(",")}`, extra.length && `extra ${extra.join(",")}`, noSelector.length && `no organizationId on ${noSelector.join(",")}`].filter(Boolean).join("; ")})`);
     else report.pass(`${label}-tools-list`, detail);
 
     const call = readCall(tools, fromEnv(env, "organization"));

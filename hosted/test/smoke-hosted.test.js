@@ -18,7 +18,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { DEFAULT_BASE } from "../src/proxy.js";
 import { AUTHORIZATION_SERVER, PRM_PATH, PUBLIC_ORIGIN, protectedResourceMetadata } from "../src/metadata.js";
-import { CLIENT_NAME_PREFIX, ENV_NAMES, EXPECTED_TOOLS, REDIRECT_URI, USER_AGENT, WRONG_AUDIENCE_RESOURCE, run } from "../scripts/smoke-hosted.js";
+import { CLIENT_NAME_PREFIX, ENV_NAMES, EXPECTED_TOOLS, OPTIONAL_TOOLS, REDIRECT_URI, USER_AGENT, WRONG_AUDIENCE_RESOURCE, run } from "../scripts/smoke-hosted.js";
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "smoke-hosted.js");
 const GOOD = "mcp-user-token-0123456789abcdef";
@@ -40,7 +40,7 @@ const LOOPBACK_ORIGIN = new URL(REDIRECT_URI).origin;
 const NO_TOKENS = Object.fromEntries(Object.values(ENV_NAMES).flat().map((n) => [n, ""]));
 
 const toolDefs = (names) =>
-  names.map((name) => ({ name, inputSchema: { type: "object", properties: { organizationId: { type: "string" } }, required: ["organizationId"] } }));
+  names.map((name) => (typeof name === "object" ? name : { name, inputSchema: { type: "object", properties: { organizationId: { type: "string" } }, required: ["organizationId"] } }));
 
 async function mcpAnswer(req, res, body, tools) {
   const server = new Server({ name: "mock-cloud-mcp", version: "1" }, { capabilities: { tools: {} } });
@@ -335,6 +335,18 @@ test("an extra or missing tool fails tools/list", async (t) => {
   const { code, out } = await smoke(await production(t, { tools: [...EXPECTED_TOOLS.slice(1), "deleteEverything"] }), { BLOWHORN_MCP_TOKEN: GOOD });
   assert.strictEqual(code, 1);
   assert.match(out, /FAIL mcp-token-tools-list: .*\(missing listContentItems; extra deleteEverything\)/);
+});
+
+test("a tool Cloud may add (getPlatformSessions) passes tools/list, listed or not, if it takes the organization selector; another extra still fails", async (t) => {
+  const withIt = await smoke(await production(t, { tools: [...EXPECTED_TOOLS, ...OPTIONAL_TOOLS] }), { BLOWHORN_MCP_TOKEN: GOOD });
+  assert.match(withIt.out, new RegExp(`PASS mcp-token-tools-list: tools/list 200 tools=${[...EXPECTED_TOOLS, ...OPTIONAL_TOOLS].join(",")}\\n`));
+  const without = await smoke(await production(t, { tools: [...EXPECTED_TOOLS] }), { BLOWHORN_MCP_TOKEN: GOOD });
+  assert.match(without.out, new RegExp(`PASS mcp-token-tools-list: tools/list 200 tools=${EXPECTED_TOOLS.join(",")}\\n`));
+  const other = await smoke(await production(t, { tools: [...EXPECTED_TOOLS, ...OPTIONAL_TOOLS, "deleteEverything"] }), { BLOWHORN_MCP_TOKEN: GOOD });
+  assert.match(other.out, /FAIL mcp-token-tools-list: .*extra deleteEverything\)/);
+  const bare = { name: "getPlatformSessions", inputSchema: { type: "object", properties: {} } };
+  const noSelector = await smoke(await production(t, { tools: [...EXPECTED_TOOLS, bare] }), { BLOWHORN_MCP_TOKEN: GOOD });
+  assert.match(noSelector.out, /FAIL mcp-token-tools-list: .*\(no organizationId on getPlatformSessions\)/);
 });
 
 test("registration secrets are never printed, and RFC 7592 cleanup runs when the answer offers it", async (t) => {
