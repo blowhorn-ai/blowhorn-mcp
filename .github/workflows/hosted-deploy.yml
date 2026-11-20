@@ -87,20 +87,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Smoke test
         run: |
-          expect() {
-            local want=$1; shift
-            local got
-            got=$(curl -sS -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 3 --retry-all-errors "$@")
-            echo "$* -> $got (want $want)"
-            [[ "$got" =~ ^($want)$ ]]
-          }
-          base=https://mcp-staging.blowhorn.ai
-          expect 200 "$base/healthz"
-          # Metadata 200 with the staging resource and issuer, and the 401
-          # challenge naming the staging metadata (never production); expected
-          # values: hosted/schemas/deployments.json.
-          # A new custom domain can take a minute to resolve, so retry.
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+          # A new custom domain can take a minute to resolve. Do not probe
+          # /healthz with a short curl retry first: that is what failed the
+          # first staging deploy (curl 6, host not in DNS yet) before the
+          # longer loop ran. check-deployment.js covers /healthz, metadata
+          # and the 401 challenge against hosted/schemas/deployments.json.
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
             node hosted/scripts/check-deployment.js staging && exit 0
             sleep 10
           done
