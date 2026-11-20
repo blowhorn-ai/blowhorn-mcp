@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mcp.blowhorn.ai/schemas/protected-resource.schema.json",
   "title": "OAuthProtectedResourceMetadata",
-  "description": "RFC 9728 protected resource metadata the Worker serves at https://mcp.blowhorn.ai. resource is the public connect URL (MCP SDK requires it to match the URL the client opened). authorization_servers names Cloud's Hydra issuer on the Blowhorn host. Cloud's design-canonical deployment URL remains https://cloud.blowhorn.ai/mcp; the Worker forwards Bearer tokens there.",
+  "description": "RFC 9728 protected resource metadata the Worker serves at https://mcp.blowhorn.ai. resource is the public connect URL (MCP SDK requires it to match the URL the client opened). authorization_servers names Cloud's authorization server issuer on the Blowhorn host, https://cloud.blowhorn.ai. Cloud's design-canonical deployment URL remains https://cloud.blowhorn.ai/mcp; the Worker forwards Bearer tokens there.",
   "type": "object",
   "additionalProperties": false,
   "required": ["resource", "authorization_servers", "bearer_methods_supported"],
@@ -18,7 +18,7 @@
       "maxItems": 1,
       "items": {
         "type": "string",
-        "const": "https://cloud.blowhorn.ai/hydra"
+        "const": "https://cloud.blowhorn.ai"
       },
       "description": "Cloud's authorization server issuer on the Blowhorn host (RFC 8414)."
     },

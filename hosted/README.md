@@ -33,8 +33,7 @@ Cloud owns the design-doc deployment URL and preferred token audience
 token validation, and the tools. The Worker serves RFC 9728 protected resource
 metadata locally (`src/metadata.js`) with `resource` equal to the public connect
 URL `https://mcp.blowhorn.ai/mcp` (required by the MCP OAuth client) and
-`authorization_servers` naming the authorization server advertised in
-`https://mcp.blowhorn.ai/.well-known/oauth-protected-resource`. It rewrites
+`authorization_servers` naming `https://cloud.blowhorn.ai`. It rewrites
 Cloud's `401` `WWW-Authenticate`
 so `resource_metadata` points at this origin, and forwards every Bearer token to
 Cloud's `/mcp` unchanged.
@@ -180,8 +179,7 @@ do not merge this change before.** The Worker does not enforce any of it.
 3. **Metadata at both paths.** `GET /.well-known/oauth-protected-resource/mcp`
    and `GET /.well-known/oauth-protected-resource` on this Worker answer `200`
    JSON with `resource` exactly `https://mcp.blowhorn.ai/mcp` and
-   `authorization_servers` naming the authorization server advertised in
-   `https://mcp.blowhorn.ai/.well-known/oauth-protected-resource`, which
+   `authorization_servers` naming `https://cloud.blowhorn.ai`, which
    serves discovery, registration, authorize (S256, one `resource` equal to
    the public resource, else `invalid_target`) and token. Neither redirects.
 4. **Tokens.** An MCP OAuth token is bound to `https://mcp.blowhorn.ai/mcp` and

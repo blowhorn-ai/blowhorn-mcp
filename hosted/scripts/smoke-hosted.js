@@ -184,6 +184,14 @@ export async function checkProtectedResource(ctx) {
   return docs[0].authorization_servers[0];
 }
 
+function sameOrigin(url, base) {
+  try {
+    return Boolean(url) && new URL(url).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+}
+
 /** GET the issuer's RFC 8414 metadata (path-inserted and origin root); returns the first valid document. */
 export async function checkAuthorizationServer(ctx, issuer) {
   const { fetch, report } = ctx;
@@ -192,6 +200,8 @@ export async function checkAuthorizationServer(ctx, issuer) {
     return undefined;
   }
   const wantRegistration = issuer === AUTHORIZATION_SERVER ? `${DEFAULT_BASE}/oauth2/register` : undefined;
+  const wantAuthorize = issuer === AUTHORIZATION_SERVER ? `${DEFAULT_BASE}/oauth2/auth` : undefined;
+  const wantToken = issuer === AUTHORIZATION_SERVER ? `${DEFAULT_BASE}/oauth2/token` : undefined;
   const { origin, pathname } = new URL(issuer);
   const urls = [
     ["as-metadata", `${origin}/.well-known/oauth-authorization-server${pathname.replace(/\/+$/, "")}`],
@@ -209,6 +219,10 @@ export async function checkAuthorizationServer(ctx, issuer) {
       const parsed = OAuthMetadataSchema.safeParse(doc);
       if (!parsed.success) problems.push(`schema: ${zodErrors(parsed)}`);
       if (doc.issuer !== issuer) problems.push(`issuer ${doc.issuer} is not ${issuer}`);
+      // Pin production Cloud's authorize and token paths; a document that
+      // points them at another origin is left to the test-account pin check.
+      if (wantAuthorize && sameOrigin(doc.authorization_endpoint, DEFAULT_BASE) && doc.authorization_endpoint !== wantAuthorize) problems.push(`authorization_endpoint is not ${wantAuthorize}`);
+      if (wantToken && sameOrigin(doc.token_endpoint, DEFAULT_BASE) && doc.token_endpoint !== wantToken) problems.push(`token_endpoint is not ${wantToken}`);
       if (!doc.registration_endpoint) problems.push("no registration_endpoint");
       else if (wantRegistration && doc.registration_endpoint !== wantRegistration) problems.push(`registration_endpoint is not ${wantRegistration}`);
       else if (registration && doc.registration_endpoint !== registration) problems.push("registration_endpoint differs from the path-inserted document's");

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /*
- * FAKE UPSTREAM CONTRACT TEST. NOT a real Ory Hydra, NOT a real Ory Kratos,
- * NOT Blowhorn Cloud, NOT Gemini CLI, and NOT an end-to-end test of anything
- * deployed.
+ * FAKE UPSTREAM CONTRACT TEST. NOT the real Cloud authorization server, NOT
+ * the real identity service, NOT Blowhorn Cloud, NOT Gemini CLI, and NOT an
+ * end-to-end test of anything deployed.
  *
  * What it proves: the Worker, as the public edge at https://mcp.blowhorn.ai/mcp,
  * rewrites Cloud's 401 challenge and serves RFC 9728 metadata naming Cloud's
@@ -13,11 +13,13 @@
  * tools and call a tool through the Worker with the token it got.
  *
  * What it does not prove: that Cloud (PR 6424 or anything else) really
- * serves this contract, that Hydra or Kratos accept it, that Gemini CLI
+ * serves this contract, that the real authorization server or identity
+ * service accept it, that Gemini CLI
  * behaves like the SDK, or anything about production. The fake in
  * test/support/harness.js is only as good as its reading of the contract.
- * The real local-stack run (Hydra, Kratos, Cloud) is a separate gate owned by
- * the Cloud change and must pass before any cutover of this Worker.
+ * The real local-stack run (authorization server, identity service, Cloud)
+ * is a separate gate owned by the Cloud change and must pass before any
+ * cutover of this Worker.
  */
 import test from "node:test";
 import assert from "node:assert";
@@ -91,7 +93,7 @@ test("official SDK: 401, discovery through the Worker, registration, code S256 w
   assert.deepStrictEqual(viaWorker, ["POST /mcp", `GET ${PRM_PATH}`]);
   assert.ok(!cloud.seen.some((s) => s.url.includes("/.well-known/oauth-protected-resource")), "PRM was not fetched from Cloud");
   assert.ok(cloud.seen.some((s) => s.url === `${CLOUD}/mcp`), "the 401 came from Cloud's /mcp");
-  assert.ok(cloud.seen.some((s) => s.url === `${CLOUD}/.well-known/oauth-authorization-server/hydra` || s.url.startsWith(`${ISSUER}/`)), "the SDK followed the issuer in the Worker's metadata");
+  assert.ok(cloud.seen.some((s) => s.url === `${CLOUD}/.well-known/oauth-authorization-server` || s.url.startsWith(`${CLOUD}/oauth2/`)), "the SDK followed the issuer in the Worker's metadata");
   assert.ok(cloud.seen.some((s) => s.url === `${ISSUER}/oauth2/register`), "and registered there");
   assert.ok(cloud.seen.filter((s) => s.url.startsWith(CLOUD) && s.url !== `${CLOUD}/mcp` && !s.url.includes("/.well-known/oauth-protected-resource")).every((s) => !s.headers.authorization));
   assert.strictEqual(cloud.clients.size, 1);

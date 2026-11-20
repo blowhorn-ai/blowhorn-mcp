@@ -9,8 +9,8 @@
  * the Cloud side of the contract (protected resource metadata, an OAuth
  * authorization server with registration, authorize and token endpoints, and
  * a stateless /mcp). It is a FAKE UPSTREAM CONTRACT: it proves the Worker
- * carries what the contract says, and says nothing about real Ory Hydra or
- * Kratos, nor about Blowhorn Cloud's real implementation.
+ * carries what the contract says, and says nothing about the real Cloud
+ * authorization server or identity service, nor about Blowhorn Cloud's real implementation.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { RATE_LIMITER_BINDING } from "../../src/ratelimit.js";
@@ -20,7 +20,7 @@ export const MCP_ORIGIN = "https://mcp.blowhorn.ai";
 export const CLOUD = "https://cloud.blowhorn.ai";
 /** Protected resource URI / token audience for clients of this Worker (MCP SDK match). */
 export const CANONICAL_RESOURCE = MCP;
-export const ISSUER = `${CLOUD}/hydra`;
+export const ISSUER = CLOUD;
 export const PRM_PATH = "/.well-known/oauth-protected-resource/mcp";
 export const PRM = `${MCP_ORIGIN}${PRM_PATH}`;
 export const ACCEPT = "application/json, text/event-stream";
@@ -165,7 +165,7 @@ export function fakeCloud({ legacyTokens = [], leaky = false, sse = false } = {}
     if (url.pathname === PRM_PATH || url.pathname === "/.well-known/oauth-protected-resource") {
       return json(200, { resource: CANONICAL_RESOURCE, authorization_servers: [ISSUER], bearer_methods_supported: ["header"] }, { "Cache-Control": "public, max-age=300" });
     }
-    if (url.pathname === "/.well-known/oauth-authorization-server/hydra") {
+    if (url.pathname === "/.well-known/oauth-authorization-server" || url.pathname === "/.well-known/openid-configuration") {
       return json(200, {
         issuer: ISSUER,
         authorization_endpoint: `${ISSUER}/oauth2/auth`,

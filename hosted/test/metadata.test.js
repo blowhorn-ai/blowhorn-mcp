@@ -27,7 +27,7 @@ test("protectedResourceMetadata matches the checked-in schema and the public Wor
   assert.strictEqual(doc.resource, PUBLIC_RESOURCE);
   assert.strictEqual(doc.resource, "https://mcp.blowhorn.ai/mcp");
   assert.deepStrictEqual(doc.authorization_servers, [AUTHORIZATION_SERVER]);
-  assert.deepStrictEqual(doc.authorization_servers, ["https://cloud.blowhorn.ai/hydra"]);
+  assert.deepStrictEqual(doc.authorization_servers, ["https://cloud.blowhorn.ai"]);
   assert.deepStrictEqual(doc.bearer_methods_supported, ["header"]);
 });
 
