@@ -23,7 +23,7 @@ export { PUBLIC_ORIGIN, PUBLIC_RESOURCE };
 /** Cloud's /mcp path the Worker forwards to (design canonical deployment). */
 export const CLOUD_MCP_PATH = `${DEFAULT_BASE}/mcp`;
 /** Cloud's authorization server issuer on the Blowhorn host. */
-export const AUTHORIZATION_SERVER = `${DEFAULT_BASE}/hydra`;
+export const AUTHORIZATION_SERVER = DEFAULT_BASE;
 /** Path-inserted and root RFC 9728 paths this Worker serves. */
 export const PRM_PATH = "/.well-known/oauth-protected-resource/mcp";
 export const PRM_ROOT = "/.well-known/oauth-protected-resource";

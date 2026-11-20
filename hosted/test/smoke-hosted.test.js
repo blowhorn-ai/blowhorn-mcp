@@ -113,7 +113,8 @@ async function mockOrigin(t, options = {}) {
     const cookie = req.headers.cookie ?? "";
     const signedIn = cookie.includes(`session_cookie=${SESSION}`);
     const challenge = options.challenge ?? `Bearer resource_metadata="${prm}"`;
-    const asPath = options.asAppended ? `${issuerPath}/.well-known/oauth-authorization-server` : `/.well-known/oauth-authorization-server${issuerPath}`;
+    // asAppended serves only a non-standard path so the RFC 8414 origin-root fetch 404s.
+    const asPath = options.asAppended ? "/.well-known/oauth-authorization-server/mcp" : `/.well-known/oauth-authorization-server${issuerPath}`;
     const asDoc = { issuer: options.asIssuer ?? issuer, authorization_endpoint: options.authorizeAt ?? `${issuer}/oauth2/auth`, token_endpoint: `${issuer}/oauth2/token`, response_types_supported: ["code"], registration_endpoint: registration };
     switch (`${req.method} ${url.pathname}`) {
       case `GET ${issuerPath}/oauth2/auth`: {
@@ -173,7 +174,9 @@ async function mockOrigin(t, options = {}) {
       case "GET /.well-known/oauth-protected-resource":
         return json(200, { ...protectedResourceMetadata(), resource: state.urls.resource, authorization_servers: [issuer], ...options.prm });
       case `GET ${asPath}`:
+        return json(200, asDoc);
       case "GET /.well-known/oauth-authorization-server":
+        if (options.asAppended) return json(404, { error: "not found" });
         return json(200, asDoc);
       case "GET /healthz":
         return json(200, { ok: true });
@@ -219,7 +222,7 @@ async function production(t, options) {
     resource: `${PUBLIC_ORIGIN}/mcp`,
     prm: `${PUBLIC_ORIGIN}${PRM_PATH}`,
     issuer: AUTHORIZATION_SERVER,
-    issuerPath: new URL(AUTHORIZATION_SERVER).pathname,
+    issuerPath: new URL(AUTHORIZATION_SERVER).pathname.replace(/\/+$/, ""),
     registration: `${DEFAULT_BASE}/oauth2/register`,
   };
   mock.hosts = new Set();
@@ -282,19 +285,20 @@ test("a live check that fails exits 1: wrong metadata resource, and an open /mcp
   assert.strictEqual(open.status["mcp-post-401"], "fail");
 });
 
-test("authorization server metadata: only the RFC 8414 path-inserted URL passes as-metadata, and its issuer must be the one the metadata named", async (t) => {
+test("authorization server metadata: the RFC 8414 origin-root URL passes, and its issuer must be the one the metadata named", async (t) => {
   const ok = await smoke(await production(t));
-  assert.match(ok.out, /PASS as-metadata: GET https:\/\/cloud\.blowhorn\.ai\/\.well-known\/oauth-authorization-server\/hydra 200/);
+  assert.match(ok.out, /PASS as-metadata: GET https:\/\/cloud\.blowhorn\.ai\/\.well-known\/oauth-authorization-server 200/);
+  assert.match(ok.out, /PASS as-metadata-root: GET https:\/\/cloud\.blowhorn\.ai\/\.well-known\/oauth-authorization-server 200/);
 
   const appended = await smoke(await production(t, { asAppended: true }));
   assert.strictEqual(appended.code, 1);
-  assert.match(appended.out, /FAIL as-metadata: GET https:\/\/cloud\.blowhorn\.ai\/\.well-known\/oauth-authorization-server\/hydra 404/);
+  assert.match(appended.out, /FAIL as-metadata: GET https:\/\/cloud\.blowhorn\.ai\/\.well-known\/oauth-authorization-server 404/);
 
-  const other = await smoke(await production(t, { asIssuer: "https://elsewhere.example/hydra" }));
+  const other = await smoke(await production(t, { asIssuer: "https://elsewhere.example" }));
   assert.strictEqual(other.code, 1);
   assert.strictEqual(other.status["as-metadata"], "fail");
   assert.strictEqual(other.status["as-metadata-root"], "fail");
-  assert.match(other.out, /FAIL as-metadata: .*issuer https:\/\/elsewhere\.example\/hydra is not https:\/\/cloud\.blowhorn\.ai\/hydra/);
+  assert.match(other.out, /FAIL as-metadata: .*issuer https:\/\/elsewhere\.example is not https:\/\/cloud\.blowhorn\.ai/);
 });
 
 test("with every token: SDK initialize at 2025-11-25, the six read tools, a read call, the legacy path labeled, wrong audience refused, no token printed", async (t) => {
@@ -421,7 +425,7 @@ test("test account verified: authorization code + PKCE through login and a plain
   for (const name of ["user-login", "user-consent", "user-authorize", "user-token", "user-token-initialize", "user-token-tools-list", "user-token-tools-call", "wrong-audience"]) assert.strictEqual(status[name], "pass", `${name}\n${out}`);
   assert.match(out, /PASS user-token-initialize: initialize 200 protocolVersion=2025-11-25/);
   assert.match(out, new RegExp(`PASS user-token-tools-list: tools/list 200 tools=${EXPECTED_TOOLS.join(",")}`));
-  assert.match(out, /PASS user-token: POST https:\/\/cloud\.blowhorn\.ai\/hydra\/oauth2\/token 200 token_type="bearer" expires_in=3600 scope="openid offline_access"/);
+  assert.match(out, /PASS user-token: POST https:\/\/cloud\.blowhorn\.ai\/oauth2\/token 200 token_type="bearer" expires_in=3600 scope="openid offline_access"/);
 
   const resources = (mock.state.authorizes ?? [mock.state.authorize]).map((a) => a.get("resource"));
   assert.deepStrictEqual(resources, ["https://mcp.blowhorn.ai/mcp", WRONG_AUDIENCE_RESOURCE]);
@@ -466,7 +470,7 @@ test("test account: a consent page that needs a browser, or a Cloudflare challen
   assert.strictEqual(widget.status["user-login"], "pass");
   assert.strictEqual(widget.status["user-consent"], "skip");
   assert.strictEqual(widget.status["wrong-audience"], "skip", widget.out);
-  assert.match(widget.out, /SKIP user-consent: GET https:\/\/cloud\.blowhorn\.ai\/consent 200 has no plain HTML form, and POST https:\/\/cloud\.blowhorn\.ai\/api\/identity\/oauth\/consent-requests\/accept 404; a person \(or a browser driver\) must open https:\/\/cloud\.blowhorn\.ai\/hydra\/oauth2\/auth\?/);
+  assert.match(widget.out, /SKIP user-consent: GET https:\/\/cloud\.blowhorn\.ai\/consent 200 has no plain HTML form, and POST https:\/\/cloud\.blowhorn\.ai\/api\/identity\/oauth\/consent-requests\/accept 404; a person \(or a browser driver\) must open https:\/\/cloud\.blowhorn\.ai\/oauth2\/auth\?/);
 
   const blocked = await smoke(await production(t, { consent: "cloudflare" }), ACCOUNT);
   assert.strictEqual(blocked.code, 0, blocked.out);
@@ -479,7 +483,7 @@ test("test account: a consent page that needs a browser, or a Cloudflare challen
 });
 
 test("test account pinned to production Cloud: another authorization_endpoint origin, or a redirect off it, skips and never receives the password", async (t) => {
-  const staging = await production(t, { authorizeAt: "https://staging.example/hydra/oauth2/auth" });
+  const staging = await production(t, { authorizeAt: "https://staging.example/oauth2/auth" });
   const pinned = await smoke(staging, ACCOUNT);
   assert.strictEqual(pinned.code, 0, pinned.out);
   assert.strictEqual(pinned.status["user-token"], "skip", pinned.out);
