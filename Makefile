@@ -108,14 +108,15 @@ hosted-require-node:
 ## locked wrangler in hosted/node_modules, never a download. It always
 ## reinstalls from hosted/package-lock.json first, so a node_modules left from
 ## before a lock bump never deploys another wrangler. Production only: wrangler
-## deploy with no --env. The sanctioned path is .github/workflows/hosted-deploy.yml
+## deploy --env "" (the top level), so a CLOUDFLARE_ENV left in the environment
+## can never turn this target into another Worker's deploy. The sanctioned path is .github/workflows/hosted-deploy.yml
 ## on merge to master (or workflow_dispatch); this target is the emergency
 ## manual path and needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the
 ## environment.
 hosted-deploy: hosted-require-node
 	$(MAKE) hosted-install
 	$(MAKE) hosted-check
-	cd hosted && ./node_modules/.bin/wrangler deploy
+	cd hosted && ./node_modules/.bin/wrangler deploy --env ""
 
 ## hosted-deploy-staging: the same checks, then wrangler deploy --env staging
 ## (the blowhorn-mcp-hosted-staging Worker in front of staging Cloud). Same

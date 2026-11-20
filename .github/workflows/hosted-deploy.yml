@@ -64,7 +64,11 @@ jobs:
     name: make hosted-deploy-staging
     runs-on: ubuntu-latest
     # No `environment: production`: staging has its own concurrency group and
-    # is independent of the production job.
+    # is independent of the production job. The production environment's
+    # branch policy does not cover this job, so it is held to master here: a
+    # workflow_dispatch from another branch never deploys that branch's code
+    # in front of staging Cloud.
+    if: github.ref == 'refs/heads/master'
     concurrency:
       group: hosted-deploy-staging
       cancel-in-progress: false

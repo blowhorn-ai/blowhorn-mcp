@@ -90,6 +90,41 @@ test("the production and staging documents are both valid against protected-reso
   assert.strictEqual(validator.validate({ ...protectedResourceMetadata(PROD), authorization_servers: ["https://evil.example"] }).valid, false);
 });
 
+test("the protected resource schema holds each resource to its own issuer: no cross pair validates", () => {
+  const schema = read("schemas", "protected-resource.schema.json");
+  const validator = new Validator(schema);
+  assert.deepStrictEqual(
+    schema.oneOf.map((b) => [b.properties.resource.const, b.properties.authorization_servers.items.const]),
+    data.deployments.map((d) => [`${d.publicOrigin}/mcp`, d.cloudBase]),
+  );
+  for (const a of data.deployments) {
+    for (const b of data.deployments) {
+      if (a === b) continue;
+      const doc = { ...protectedResourceMetadata({ CLOUD_API_BASE: a.cloudBase, PUBLIC_ORIGIN: a.publicOrigin }), authorization_servers: [b.cloudBase] };
+      assert.strictEqual(validator.validate(doc).valid, false, `${a.name} resource with ${b.name} issuer`);
+    }
+  }
+});
+
+test("smoke-hosted holds a known base to its own issuer and lets another base name any issuer", async () => {
+  const { checkProtectedResource, prmSchema } = await import("../scripts/smoke-hosted.js");
+  const probe = async (base, doc) => {
+    const results = [];
+    const report = { pass: (name) => results.push([name, "pass"]), fail: (name, detail) => results.push([name, "fail", detail]) };
+    const fetch = async () => new Response(JSON.stringify(doc), { status: 200, headers: { "Content-Type": "application/json" } });
+    await checkProtectedResource({ base, fetch, report });
+    return results;
+  };
+  const staging = protectedResourceMetadata(STAGING);
+  assert.deepStrictEqual((await probe(STAGING.PUBLIC_ORIGIN, staging)).map((r) => r.slice(0, 2)), [["prm", "pass"], ["prm-root", "pass"], ["prm-same", "pass"]]);
+  const crossed = await probe(STAGING.PUBLIC_ORIGIN, { ...staging, authorization_servers: [PROD.CLOUD_API_BASE] });
+  assert.deepStrictEqual(crossed.map((r) => r.slice(0, 2)), [["prm", "fail"], ["prm-root", "fail"]]);
+  assert.match(crossed[0][2], /authorization_servers is not \[https:\/\/staging-cloud\.layer5\.io\]/);
+  const local = "http://127.0.0.1:8787";
+  const other = new Validator(prmSchema(local)).validate({ ...staging, resource: `${local}/mcp`, authorization_servers: ["http://127.0.0.1:9999"] });
+  assert.strictEqual(other.valid, true, JSON.stringify(other.errors));
+});
+
 test("production document stays exactly the published one", () => {
   const expected = { resource: "https://mcp.blowhorn.ai/mcp", authorization_servers: ["https://cloud.blowhorn.ai"], bearer_methods_supported: ["header"], resource_name: "Blowhorn MCP" };
   assert.deepStrictEqual(JSON.parse(JSON.stringify(protectedResourceMetadata())), expected);

@@ -2,13 +2,39 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mcp.blowhorn.ai/schemas/protected-resource.schema.json",
   "title": "OAuthProtectedResourceMetadata",
-  "description": "RFC 9728 protected resource metadata the Worker serves at its public origin. resource is the public connect URL (MCP SDK requires it to match the URL the client opened). authorization_servers names Cloud's authorization server issuer. Only the pairs in deployments.json are allowed: production (https://mcp.blowhorn.ai/mcp, issuer https://cloud.blowhorn.ai) and staging (https://mcp-staging.blowhorn.ai/mcp, issuer https://staging-cloud.layer5.io); test/metadata.test.js holds the enums to that file and the document's pair to each other. Cloud's design-canonical deployment URL remains https://cloud.blowhorn.ai/mcp; the Worker forwards Bearer tokens there.",
+  "description": "RFC 9728 protected resource metadata the Worker serves at its public origin. resource is the public connect URL (MCP SDK requires it to match the URL the client opened). authorization_servers names Cloud's authorization server issuer. Only the pairs in deployments.json are allowed: production (https://mcp.blowhorn.ai/mcp, issuer https://cloud.blowhorn.ai) and staging (https://mcp-staging.blowhorn.ai/mcp, issuer https://staging-cloud.layer5.io); oneOf holds each resource to its own issuer, so a document can never mix one deployment's resource with another's issuer; test/deployments.test.js holds the enums and the pairs to that file. The Worker forwards Bearer tokens to the same Cloud's /mcp.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "resource",
     "authorization_servers",
     "bearer_methods_supported"
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "resource": {
+          "const": "https://mcp.blowhorn.ai/mcp"
+        },
+        "authorization_servers": {
+          "items": {
+            "const": "https://cloud.blowhorn.ai"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "resource": {
+          "const": "https://mcp-staging.blowhorn.ai/mcp"
+        },
+        "authorization_servers": {
+          "items": {
+            "const": "https://staging-cloud.layer5.io"
+          }
+        }
+      }
+    }
   ],
   "properties": {
     "resource": {

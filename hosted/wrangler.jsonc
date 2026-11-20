@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // blowhorn-mcp-hosted: the interim MCP transport proxy (see README.md).
-// Production is the top level of this file: `wrangler deploy` with no --env
+// Production is the top level of this file: `wrangler deploy --env ""`
 // (`make hosted-deploy`). No routes block there: the mcp.blowhorn.ai custom
 // domain is attached through the Cloudflare API. env.staging is a second
 // Worker, blowhorn-mcp-hosted-staging, on https://mcp-staging.blowhorn.ai in

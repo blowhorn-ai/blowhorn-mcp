@@ -500,9 +500,12 @@ smoke-tests `/healthz` (200), unauthenticated `/mcp` (401), and that the
 metadata still names `https://cloud.blowhorn.ai` and
 `https://mcp.blowhorn.ai/mcp`. The staging job (its own concurrency group, not
 the `production` environment) runs `make hosted-deploy-staging`; see
-[Staging](#staging). A failure in one never skips or undoes the other. The
-smoke tests do not check the challenge's `resource_metadata` on production; see
-[Before cutover](#before-cutover). After the deploy, run the fuller
+[Staging](#staging). A failure in one never skips or undoes the other. Both
+jobs run `scripts/check-deployment.js` (expected values from
+`schemas/deployments.json`), which also holds the 401 challenge's
+`resource_metadata` to that deployment's own metadata URL. The staging job runs
+only for `master` (a `workflow_dispatch` from another branch skips it). After
+the deploy, run the fuller
 [Post-release smoke](#post-release-smoke) by hand. The workflow can also be run
 by hand with workflow_dispatch.
 
@@ -511,7 +514,7 @@ manual path, run from a machine that has `CLOUDFLARE_API_TOKEN` and
 `CLOUDFLARE_ACCOUNT_ID` in the environment:
 
 ```bash
-make hosted-deploy          # production: Node check, npm ci, hosted-check, then the locked wrangler deploy (no --env)
+make hosted-deploy          # production: Node check, npm ci, hosted-check, then the locked wrangler deploy --env "" (the top level)
 make hosted-deploy-staging  # the same checks, then wrangler deploy --env staging
 ```
 
@@ -566,7 +569,7 @@ with `X-Forwarded-Mcp-Resource` set to the staging resource.
   Object namespace, so no rate limit state is shared with production. Vars,
   bindings and migrations are declared again in `env.staging` (wrangler does not
   inherit them); the limits equal production's. Production's `wrangler deploy`
-  (no `--env`) publishes exactly what it did before.
+  (`--env ""`, the top level) publishes exactly what it did before.
 - **Deploy.** `make hosted-deploy-staging`, or the staging job above. The
   custom domain is attached by the deploy (`routes` with `custom_domain`), which
   needs the CI Cloudflare token to be allowed to edit DNS and Workers routes on
