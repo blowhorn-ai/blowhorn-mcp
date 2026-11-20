@@ -9,7 +9,7 @@
  *   skill  every skills/<name>/SKILL.md has valid frontmatter
  *   facts  MAINTAINERS.md names Blowhorn <minimumAppVersion> and the docs carry listing.json's urls;
  *          package.json's version, homepage and repository agree with them
- *   logo   listing.json's logo.png is a 400x400 PNG
+ *   logo   listing.json's logo.png is a 512x512 PNG
  *   pack   the npm tarball holds exactly the launcher's files
  *
  * The copy rules are written out below, and test/check.test.js feeds them
@@ -191,8 +191,8 @@ function logo() {
   const file = generate.readSources().listing.logo.png;
   const size = pngSize(fs.readFileSync(path.join(ROOT, file)));
   if (!size) fail(`${file}: not a PNG`);
-  if (size.width !== 400 || size.height !== 400) fail(`${file}: ${size.width}x${size.height}, want 400x400`);
-  process.stdout.write(`ok ${file} is a 400x400 PNG\n`);
+  if (size.width !== 512 || size.height !== 512) fail(`${file}: ${size.width}x${size.height}, want 512x512`);
+  process.stdout.write(`ok ${file} is a 512x512 PNG\n`);
 }
 
 const TARBALL = ["LICENSE", "README.md", "bin/blowhorn-mcp.js", "lib/launcher-common.js", "package.json"];

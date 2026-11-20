@@ -27,7 +27,7 @@
       "additionalProperties": false
     },
     "logo": {
-      "description": "svg is the Cursor plugin logo; png is the 400x400 image for marketplace forms, which scripts/check.js logo verifies.",
+      "description": "svg is the Cursor plugin logo; png is the 512x512 image for marketplace forms, which scripts/check.js logo verifies.",
       "type": "object",
       "properties": {
         "svg": { "$ref": "#/$defs/relativePath", "type": "string", "pattern": "\\.svg$" },
