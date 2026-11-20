@@ -3,7 +3,8 @@
   "description": "Not a bot. It's you. Social media and marketing management that grows replies, comments and real conversation, and posts, reposts and amplifies, on LinkedIn, X (Twitter), Reddit, Bluesky, Threads, Mastodon, Facebook, Instagram, TikTok, YouTube, Discord, Slack, GitHub and Hacker News.",
   "version": "1.1.0",
   "author": {
-    "name": "Blowhorn"
+    "name": "Yi Nuo",
+    "email": "yi.nuo@layer5.io"
   },
   "homepage": "https://blowhorn.ai/docs/reference/mcp-server/",
   "repository": "https://github.com/blowhorn-ai/blowhorn-mcp",
@@ -34,6 +35,6 @@
     "dry-run",
     "approval"
   ],
-  "logo": "assets/blowhorn-logo.svg",
+  "logo": "assets/blowhorn-logo-512.png",
   "mcpServers": "./.cursor-plugin/mcp.json"
 }

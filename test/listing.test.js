@@ -158,6 +158,21 @@ test("Cursor plugin: the manifest points at the Cursor-only mcp.json, never at m
   assert.strictEqual(server.command, undefined);
 });
 
+test("Cursor plugin: author is the maintainer, logo is the official PNG, other manifests keep the brand author", () => {
+  const plugin = read(".cursor-plugin/plugin.json");
+  assert.deepStrictEqual(plugin.author, { name: LISTING.author.maintainerName, email: LISTING.author.email });
+  assert.strictEqual(plugin.logo, LISTING.logo.png);
+  assert.ok(fs.statSync(path.join(ROOT, plugin.logo)).isFile());
+  assert.strictEqual(read(".claude-plugin/plugin.json").author.name, "Blowhorn");
+  assert.strictEqual(read("plugin.json").author.name, "Blowhorn");
+});
+
+test("Cursor plugin: mcp.json is a bare remote URL with no auth, headers or variables", () => {
+  const raw = fs.readFileSync(path.join(ROOT, ".cursor-plugin/mcp.json"), "utf8");
+  assert.deepStrictEqual(JSON.parse(raw).mcpServers.blowhorn, { url: "https://mcp.blowhorn.ai/mcp" });
+  for (const bad of ["Authorization", "API_KEY", "headers", "env", "${"]) assert.ok(!raw.includes(bad), bad);
+});
+
 test("Gemini extension connects to the hosted server and starts no local launcher", () => {
   const server = read("gemini-extension.json").mcpServers.blowhorn;
   assert.deepStrictEqual(server, { url: "https://mcp.blowhorn.ai/mcp" });

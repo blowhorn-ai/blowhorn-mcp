@@ -8,9 +8,10 @@ streamable HTTP. You sign in with your Blowhorn account through OAuth, and
 the client registers itself, so there is no key to copy and nothing to run
 on your own machine.
 
-The hosted server is read-only today. It has four tools: `getConnections`,
-`getEvents`, `getContentItem` and `listContentItems`. An agent can review
-your connected profiles, your activity and your content. Tool results never
+The hosted server is read-only today. It has six tools: `getConnections`,
+`getEvents`, `getContentItem`, `listContentItems`, `listSchedules` and
+`getScheduleById`. An agent can review your connected profiles, your
+activity, your content and your schedules. Tool results never
 carry secrets.
 
 Reference: <https://blowhorn.ai/docs/reference/mcp-server/>.
@@ -48,9 +49,9 @@ In `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-### Cursor
+### Cursor and Grok Bot
 
-In `~/.cursor/mcp.json`:
+Without the plugin, add the server to `~/.cursor/mcp.json`:
 
 ```json
 {
@@ -62,9 +63,36 @@ In `~/.cursor/mcp.json`:
 }
 ```
 
-This repo is also a Cursor plugin (`.cursor-plugin/plugin.json` and
-`.cursor-plugin/mcp.json`), which adds the Blowhorn skill as well. That
-MCP file uses the same hosted URL.
+This repo is also a Cursor and Grok Bot plugin (`.cursor-plugin/plugin.json`
+and `.cursor-plugin/mcp.json`). The plugin bundles the hosted MCP server and
+the [Blowhorn skill](skills/blowhorn/SKILL.md).
+
+- **Read-only.** The hosted server is read-only in v1. Its six tools
+  (`getConnections`, `getEvents`, `getContentItem`, `listContentItems`,
+  `listSchedules` and `getScheduleById`) review profiles, activity, content
+  and schedules. It cannot draft, queue, schedule or publish.
+- **Sign-in.** Sign in with your Blowhorn account through OAuth when the
+  client asks. The plugin's MCP file is only the hosted URL: no API keys, no
+  headers and no variables.
+- **Usage.** Ask the agent things like "Show my Blowhorn connections." or
+  "List my schedules."
+- **Links.** [Docs](https://blowhorn.ai/docs/reference/mcp-server/),
+  [setup](https://blowhorn.ai/docs/how-to/set-up/connect-mcp-client/),
+  [privacy](https://blowhorn.ai/legal/privacy/),
+  [terms](https://blowhorn.ai/legal/terms/) and
+  [support](https://blowhorn.ai/docs/reference/support/).
+
+To try the plugin locally, copy it (a real directory copy, not a symlink to
+somewhere outside that folder) into Cursor's local plugins folder, then
+reload the window:
+
+```bash
+mkdir -p ~/.cursor/plugins/local/blowhorn
+cp -R .cursor-plugin skills assets ~/.cursor/plugins/local/blowhorn/
+```
+
+Installing from the Cursor Marketplace is planned, and Blowhorn is not listed
+there yet.
 
 ### GitHub Copilot CLI
 
@@ -122,7 +150,7 @@ Register the hosted server as a [Remote MCP](https://docs.arcade.dev/en/operate/
 3. Under Advanced settings, choose OAuth2 authorization. Leave Client ID, Client Secret, Authorization URL and Token URL empty so Arcade uses dynamic client registration with PKCE, the same pattern as [Arcade's Atlassian remote MCP guide](https://docs.arcade.dev/en/operate/governance/remote-mcp-servers/atlassian).
 4. Save, complete the Blowhorn OAuth sign-in, then pick the tools in an MCP Gateway.
 
-The hosted tools are read-only: `getConnections`, `getEvents`, `getContentItem` and `listContentItems`. This server offers tools only: no prompts, resources or sampling. This is a connection you add in your Arcade project. It is not a public Arcade catalog listing.
+The hosted tools are read-only: `getConnections`, `getEvents`, `getContentItem`, `listContentItems`, `listSchedules` and `getScheduleById`. This server offers tools only: no prompts, resources or sampling. This is a connection you add in your Arcade project. It is not a public Arcade catalog listing.
 
 ## Example prompts
 

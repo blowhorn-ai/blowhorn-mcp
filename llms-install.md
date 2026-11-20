@@ -33,8 +33,8 @@ secrets.
 Restart Cline (or reload the editor window). When Cline asks you to sign in
 to Blowhorn, do that. The `blowhorn` server should show as connected in
 Cline's MCP Servers view, with its tools listed. The hosted server is
-read-only today: `getConnections`, `getEvents`, `getContentItem` and
-`listContentItems`.
+read-only today: six tools, `getConnections`, `getEvents`, `getContentItem`,
+`listContentItems`, `listSchedules` and `getScheduleById`.
 
 ## 3. Verify with a read-only prompt
 
