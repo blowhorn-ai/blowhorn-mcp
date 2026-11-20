@@ -173,7 +173,7 @@ they drift.
 | `glama.json` | Glama maintainers | yes |
 | `skills/blowhorn/SKILL.md` | Agent skill, found by the Claude, Cursor, Copilot and Gemini packages | no |
 | `llms-install.md` | Install steps for Cline | no |
-| `assets/` | Official Blowhorn app icon, SVG and 400x400 PNG | no |
+| `assets/` | Official Blowhorn app icon, SVG and 512x512 PNG | no |
 | `schemas/*.schema.json` | Our schemas for listing.json, Cursor, Gemini, the Copilot marketplace and plugin mcp.json files | no |
 | `schemas/vendor/` | Upstream schemas, byte for byte, with `SOURCES.json` | no (`make schemas-refresh`) |
 | `scripts/` | generate, validate, check and schemas-refresh | no |

@@ -41,7 +41,7 @@
   },
   "logo": {
     "svg": "assets/blowhorn-logo.svg",
-    "png": "assets/blowhorn-logo-400.png"
+    "png": "assets/blowhorn-logo-512.png"
   },
   "author": {
     "name": "Blowhorn",

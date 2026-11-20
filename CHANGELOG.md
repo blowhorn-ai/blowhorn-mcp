@@ -5,6 +5,7 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- Replace `assets/blowhorn-logo-400.png` with the official 512x512 connector icon at `assets/blowhorn-logo-512.png`, downloaded from https://blowhorn.ai/assets/brand/logo/blowhorn-app-icon-square-512.png.
 - `hosted/`: `GET` and `HEAD /.well-known/openai-apps-challenge` return the
   `OPENAI_APPS_CHALLENGE` Worker secret as `text/plain` (OpenAI apps domain
   verification). The secret is set with `npx wrangler secret put` from

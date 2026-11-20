@@ -9,7 +9,7 @@ const { pngSize, frontmatter, factProblems, packFiles, RULES, rulesFor } = requi
 const broken = (line) => RULES.filter(([, re]) => re.test(line)).map(([rule]) => rule);
 
 test("pngSize reads width and height from the IHDR chunk, and null for anything else", () => {
-  assert.deepStrictEqual(pngSize(fs.readFileSync(path.join(__dirname, "..", "assets", "blowhorn-logo-400.png"))), { width: 400, height: 400 });
+  assert.deepStrictEqual(pngSize(fs.readFileSync(path.join(__dirname, "..", "assets", "blowhorn-logo-512.png"))), { width: 512, height: 512 });
   assert.strictEqual(pngSize(fs.readFileSync(path.join(__dirname, "..", "assets", "blowhorn-logo.svg"))), null);
   assert.strictEqual(pngSize(Buffer.alloc(10)), null);
 });
