@@ -9,10 +9,13 @@
  *
  * The mapping is keyed on a machine-readable code, never on message text. The
  * code is read from schemas/org-required.json (shape:
- * schemas/org-required.schema.json, held by test/org-required.test.js). It is
- * the proposed meshery/schemas code; replace the file with the vendored
- * definition once Cloud publishes it. Until Cloud emits the code on its
- * answer, nothing here fires and Cloud's 401 passes through as it always has.
+ * schemas/org-required.schema.json, held by test/org-required.test.js). That
+ * file's code is a PLACEHOLDER (placeholder: true), not Cloud's published
+ * name; do not invent or deploy one. Replace it with the vendored
+ * meshery/schemas definition once Cloud publishes the code. Until Cloud
+ * emits that code on its answer, nothing here fires and Cloud's 401 passes
+ * through as it always has. Do not merge this to master or deploy it while
+ * the schema still marks the code as a placeholder.
  *
  * Only a tools/call is rewritten, and only a 400, a 401 or a 200 JSON answer
  * is read (bounded). Everything else streams through untouched.

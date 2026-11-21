@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 /*
  * Cloud's missing-organization answer is a tool error, never an HTTP 401.
- * schemas/org-required.json holds the code (proposed meshery/schemas code,
- * shape in schemas/org-required.schema.json); src/orgrequired.js reads it from
- * there. The mapping fires on the code only, never on message text, and only
+ * schemas/org-required.json holds a PLACEHOLDER code (pending Cloud's
+ * schema, shape in schemas/org-required.schema.json); src/orgrequired.js
+ * reads it from there. The mapping fires on the code only, never on message
+ * text, and only
  * for a tools/call. Every other 401 stays a 401 with the public challenge.
  * Cloud is a FAKE UPSTREAM (test/support/harness.js).
  */
@@ -21,7 +22,7 @@ const HOSTED = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (...p) => JSON.parse(readFileSync(path.join(HOSTED, ...p), "utf8"));
 const TOKEN = "org-required-test-token-0123456789";
 const JSON_TYPE = { "Content-Type": "application/json" };
-const CODE = "organization_required";
+const CODE = ORG_REQUIRED_CODE;
 
 function post(message, headers = {}) {
   return new Request(MCP, {
@@ -47,9 +48,10 @@ test("the mapped code is the one in the checked-in schema file, which is valid a
   const data = read("schemas", "org-required.json");
   const result = new Validator(read("schemas", "org-required.schema.json"), "2020-12", false).validate(data);
   assert.strictEqual(result.valid, true, JSON.stringify(result.errors));
+  assert.strictEqual(data.placeholder, true, "the code is a test fixture until Cloud publishes the real one");
   assert.strictEqual(ORG_REQUIRED_CODE, data.code);
   assert.strictEqual(ORG_REQUIRED_MESSAGE, data.message);
-  assert.strictEqual(data.code, CODE, "changing the code is a contract change with Cloud and meshery/schemas");
+  assert.strictEqual(CODE, data.code, "tests must use the schema file's code, not a second copy");
   assert.ok(!/[\u2013\u2014]/.test(data.message), "no dashes but the hyphen");
 });
 

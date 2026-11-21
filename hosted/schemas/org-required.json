@@ -1,4 +1,5 @@
 {
-  "code": "organization_required",
+  "placeholder": true,
+  "code": "pending_cloud_schema_code",
   "message": "No organization is selected. Pass organizationId (the UUID of an organization you belong to) in the tool arguments, or select an organization in Blowhorn, and call the tool again. You are signed in; you do not need to sign in again."
 }
