@@ -159,8 +159,9 @@ event for each call. Those now belong to Cloud, so after cutover:
   at least 2 `choices` each with string `id`, `name` and `description`), the
   Worker answers `200` with a JSON-RPC result: the request's id,
   `isError: true`, `structuredContent` equal to Cloud's body unchanged, one
-  text block (Cloud's `message`, then one `- id: name` line per choice; the
-  Worker writes no sentence of its own), and no `WWW-Authenticate`. The
+  text block (Cloud's `message`, then one `- id: name` line per choice, then
+  a line telling the caller to choose an organization and retry with
+  `organizationId`), and no `WWW-Authenticate`. The
   Worker invents no gateway error code. A `401` whose body conforms the same
   way is mapped the same way (defensive only, so it cannot become a sign-in
   loop); every other `401` (token, audience, expiry, no Bearer, the

@@ -59,8 +59,10 @@ async function assertToolError(res, id, body = BODY) {
   assert.deepStrictEqual(doc.result.structuredContent, body);
   const text = doc.result.content[0].text;
   assert.strictEqual(doc.result.content.length, 1);
+  const expected = [body.message, ...body.choices.map((c) => `- ${c.id}: ${c.name}`), "Choose an organization and retry with organizationId set to one of these ids."].join("\n");
   assert.ok(text.startsWith(body.message), "Cloud's message leads");
-  assert.strictEqual(text, [body.message, ...body.choices.map((c) => `- ${c.id}: ${c.name}`)].join("\n"), "Cloud's message and the choices only; no invented sentence");
+  assert.strictEqual(text, expected);
+  assert.match(text, /organizationId/);
   for (const c of body.choices) {
     assert.ok(text.includes(c.id), `text names ${c.id}`);
     assert.ok(text.includes(c.name), `text names ${c.name}`);

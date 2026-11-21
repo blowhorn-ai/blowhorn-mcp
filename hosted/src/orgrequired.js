@@ -12,7 +12,8 @@
  * 409 tells an MCP client nothing useful, so on a tools/call the Worker
  * answers HTTP 200 with a JSON-RPC result whose isError is true, whose
  * structuredContent is Cloud's body unchanged, and whose text is Cloud's
- * message followed by each choice's id and name.
+ * message, each choice's id and name, and a line telling the caller to
+ * retry with organizationId.
  *
  * The code is read from schemas/generated/org-required.schema.json, which
  * scripts/org-required-schema.js generates from the vendored OpenAPI document
@@ -128,9 +129,10 @@ export function parseJson(bytes) {
   }
 }
 
-/** The tool-result text for Cloud's error body: its message, then each choice's id and name. */
+/** The tool-result text for Cloud's error body: its message, each choice's id and name, and a retry instruction naming organizationId. */
 export function orgRequiredText(body) {
-  return [body.message, ...body.choices.map((c) => `- ${c.id}: ${c.name}`)].join("\n");
+  const lines = [body.message, ...body.choices.map((c) => `- ${c.id}: ${c.name}`), "Choose an organization and retry with organizationId set to one of these ids."];
+  return lines.join("\n");
 }
 
 /** The JSON-RPC tools/call result body for Cloud's error body: isError, the body as structuredContent, and text naming the choices. */
