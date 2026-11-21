@@ -1,45 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 /*
- * Cloud's "no organization selected" answer, mapped to a tools/call tool error.
+ * Cloud's "organization selection required" answer, mapped to a tools/call tool error.
  *
- * A missing organization is not an authentication failure: the caller is
- * signed in and only has to pass organizationId. An HTTP 401 tells an MCP
- * client to sign in again, so on a tools/call the Worker answers HTTP 200
- * with a JSON-RPC result whose isError is true and whose text says what to do.
+ * When a caller belongs to several organizations and names none, Cloud
+ * answers HTTP 409 with the OrganizationSelectionRequiredError body
+ * ({ code, message, choices }) published in meshery/schemas v1.3.126. A
+ * missing organization is not an authentication failure (401 stays reserved
+ * for token and audience failures): the caller is signed in and only has to
+ * retry with one of the choices as the organizationId tool argument (Cloud
+ * turns it into X-Current-Orgid; the Worker forwards the body untouched). A 409 tells an MCP client nothing useful, so on a
+ * tools/call the Worker answers HTTP 200 with a JSON-RPC result whose isError
+ * is true, whose structuredContent is Cloud's body unchanged, and whose text
+ * lists each choice.
  *
- * The mapping is keyed on a machine-readable code, never on message text. The
- * code is read from schemas/org-required.json (shape:
- * schemas/org-required.schema.json, held by test/org-required.test.js). That
- * file's code is a PLACEHOLDER (placeholder: true), not Cloud's published
- * name; do not invent or deploy one. Replace it with the vendored
- * meshery/schemas definition once Cloud publishes the code. Until Cloud
- * emits that code on its answer, nothing here fires and Cloud's 401 passes
- * through as it always has. Do not merge this to master or deploy it while
- * the schema still marks the code as a placeholder.
+ * The code is read from schemas/generated/org-required.schema.json, which
+ * scripts/org-required-schema.js generates from the vendored OpenAPI document
+ * (schemas/vendor/meshery/). It is never typed here. The match is on the code
+ * only, never on message text.
  *
- * Only a tools/call is rewritten, and only a 400, a 401 or a 200 JSON answer
+ * - 400, 401 or 409 whose JSON body carries the code: rewritten as above. A 401
+ *   with the code is defensive only (Cloud does not send it); it must not
+ *   become a sign-in loop. Every other 401 stays a 401.
+ * - 200 JSON: Cloud's own MCP tool result already carries the same body in
+ *   structuredContent, so it is passed through unchanged (it is read only to log).
+ * - 403, 404 (a named org the caller does not belong to, or no qualifying org)
+ *   and every other status, and a 409 with another code: unchanged.
+ *
+ * Only a tools/call is classified, and only a 400, 401, 409 or 200 JSON answer
  * is read (bounded). Everything else streams through untouched.
  */
-import orgRequired from "../schemas/org-required.json" with { type: "json" };
+import schema from "../schemas/generated/org-required.schema.json" with { type: "json" };
 
-export const ORG_REQUIRED_CODE = orgRequired.code;
-export const ORG_REQUIRED_MESSAGE = orgRequired.message;
+export const ORG_REQUIRED_CODE = schema.properties.code.enum[0];
 /** The most of an answer that is read to look for the code; a larger answer is streamed on unread. */
 export const MAX_CLASSIFY_BYTES = 64 * 1024;
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
-/** The places on one object where Cloud may carry a code: `code`, a string `error`, `error.code`, `data.code`. */
-function codesOf(obj) {
-  if (!isObject(obj)) return [];
-  return [obj.code, obj.error, isObject(obj.error) ? obj.error.code : undefined, isObject(obj.data) ? obj.data.code : undefined];
+/** Cloud's error body when `doc` is one carrying the code, else null. */
+export function orgRequiredBody(doc) {
+  return isObject(doc) && doc.code === ORG_REQUIRED_CODE ? doc : null;
 }
 
-/** Whether a parsed answer body carries the organization-required code, on the body, its JSON-RPC result, or the result's structuredContent. */
-export function carriesOrgRequired(doc) {
-  if (!isObject(doc)) return false;
-  const result = isObject(doc.result) ? doc.result : undefined;
-  return [doc, result, result?.structuredContent].some((o) => codesOf(o).some((c) => c === ORG_REQUIRED_CODE));
+/** Whether a parsed 200 JSON-RPC answer is a tool result whose structuredContent carries the code. */
+export function isOrgRequiredResult(doc) {
+  return isObject(doc) && isObject(doc.result) && orgRequiredBody(doc.result.structuredContent) !== null;
 }
 
 /** The JSON-RPC id of a request message, matched without case like isToolsCall. A missing id is null. */
@@ -50,10 +55,10 @@ export function messageId(message) {
   return null;
 }
 
-/** Whether an upstream answer might be the organization-required answer and so must be read: a 400 or 401, or a 200 JSON body. */
+/** Whether an upstream answer might be the organization-required answer and so must be read: a 400, 401 or 409, or a 200 JSON body. */
 export function worthReading(response) {
   const { status } = response;
-  if (status === 400 || status === 401) return true;
+  if (status === 400 || status === 401 || status === 409) return true;
   return status === 200 && /^application\/json\b/i.test(response.headers.get("Content-Type") ?? "");
 }
 
@@ -97,16 +102,24 @@ export async function peek(response, max = MAX_CLASSIFY_BYTES) {
   }
 }
 
-/** Whether the bytes are a JSON document carrying the organization-required code. */
-export function bytesCarryOrgRequired(bytes) {
+/** The parsed JSON document in `bytes`, or undefined when they are not UTF-8 JSON. */
+export function parseJson(bytes) {
   try {
-    return carriesOrgRequired(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
-    return false;
+    return undefined;
   }
 }
 
-/** The JSON-RPC tools/call result body that tells the caller to pass organizationId. */
-export function orgRequiredResult(id) {
-  return JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text: ORG_REQUIRED_MESSAGE }] } });
+/** The tool-result text for Cloud's error body: its message, each choice's id and name, and the retry instruction. */
+export function orgRequiredText(body) {
+  const message = typeof body.message === "string" && body.message ? body.message : "More than one organization is available and none was selected.";
+  const choices = Array.isArray(body.choices) ? body.choices.filter(isObject) : [];
+  const lines = choices.map((c) => `- ${c.id}: ${c.name}`);
+  return [message, "Choose an organization, then call the tool again with organizationId set to the id of one of these organizations:", ...lines].join("\n");
+}
+
+/** The JSON-RPC tools/call result body for Cloud's error body: isError, the body as structuredContent, and text naming the choices. */
+export function orgRequiredResult(id, body) {
+  return JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text: orgRequiredText(body) }], structuredContent: body } });
 }

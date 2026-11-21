@@ -28,7 +28,7 @@
 import { bearerToken } from "./auth.js";
 import { protectedResourceMetadata, publicChallenge } from "./metadata.js";
 import { BodyTimeoutError, MAX_REQUEST_BYTES, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
-import { MAX_CLASSIFY_BYTES, bytesCarryOrgRequired, messageId, orgRequiredResult, peek, worthReading } from "./orgrequired.js";
+import { MAX_CLASSIFY_BYTES, isOrgRequiredResult, messageId, orgRequiredBody, orgRequiredResult, parseJson, peek, worthReading } from "./orgrequired.js";
 import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } from "./ratelimit.js";
 
 // Workers treat every named export of the main module as an entrypoint.
@@ -103,20 +103,24 @@ async function carry({ env, base, path, request, headers, body, cors, route }) {
   const upstream = result.response;
   const out = returnHeaders(upstream.headers);
   let answer = upstream.body;
-  // Cloud's missing-organization answer is not an authentication failure. On a tools/call it
-  // becomes a tool error (src/orgrequired.js), keyed on Cloud's code, never on message text.
-  // Only a 400, 401 or 200 JSON answer to a tools/call is read; all else streams.
+  // Cloud's organization-selection-required answer (HTTP 409 with a code, never a 401) becomes
+  // a tool error on a tools/call (src/orgrequired.js), keyed on Cloud's code, never on message
+  // text. A 200 tool result that already carries it passes through unchanged. Only a 400, 401,
+  // 409 or 200 JSON answer to a tools/call is read; all else streams.
   const call = route.kind === "mcp" ? toolsCallOf(request, body) : null;
   if (call && worthReading(upstream)) {
     const seen = await peek(upstream, MAX_CLASSIFY_BYTES);
     answer = seen.body;
-    if (seen.bytes && bytesCarryOrgRequired(seen.bytes)) {
+    const doc = seen.bytes ? parseJson(seen.bytes) : undefined;
+    if (upstream.status === 200) {
+      if (isOrgRequiredResult(doc)) log({ event: "org_required", upstreamStatus: 200, passedThrough: true });
+    } else if (orgRequiredBody(doc)) {
       log({ event: "org_required", upstreamStatus: upstream.status });
       out.delete("WWW-Authenticate");
       out.delete("Retry-After");
       out.set("Content-Type", "application/json");
       for (const [k, v] of Object.entries(cors)) out.set(k, v);
-      return new Response(orgRequiredResult(messageId(call)), { status: 200, headers: out });
+      return new Response(orgRequiredResult(messageId(call), doc), { status: 200, headers: out });
     }
   }
   // Point clients at this origin's RFC 9728 document, not Cloud's tenant host string.

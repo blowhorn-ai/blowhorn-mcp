@@ -11,6 +11,18 @@
           "sha256": "6b14536deba1c24240d18b209fb5800f05395e6c27ac69be8adc33302e166e90"
         }
       ]
+    },
+    {
+      "repo": "meshery/schemas",
+      "ref": "4c16367330b22359523b5dd87e39d2c29b140c4d",
+      "sourcePr": "meshery/schemas v1.3.126",
+      "dir": "meshery",
+      "files": [
+        {
+          "path": "schemas/constructs/v1beta2/core/api.yml",
+          "sha256": "cce99bb750d99e36401356f963c378e390ab8f39cca1435273612b548543efdf"
+        }
+      ]
     }
   ]
 }

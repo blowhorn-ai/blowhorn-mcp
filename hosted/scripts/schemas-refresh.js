@@ -6,8 +6,11 @@
  * following every relative $ref transitively, and rewrites
  * hosted/schemas/vendor/SOURCES.json with each file's sha256. The only
  * hosted/ script that touches the network; run it by hand, review the diff,
- * then run `make check`. Every vendored file is JSON, so $refs are followed with
- * JSON.parse.
+ * then run `make check`. A .json file is parsed and its relative $refs are
+ * followed. A .yml file (an OpenAPI document) is vendored as raw bytes and its
+ * refs are not followed: the one construct the Worker reads uses only local
+ * (#/...) refs. After a refresh the derived JSON Schema is regenerated
+ * (scripts/org-required-schema.js).
  *
  * blowhorn-ai/blowhorn is private, so its files need a GitHub token in
  * GITHUB_TOKEN or GH_TOKEN (for example `GITHUB_TOKEN=$(gh auth token)`).
@@ -33,6 +36,15 @@ export const SOURCES = [
     sourcePr: "blowhorn-ai/blowhorn#1672",
     dir: "blowhorn",
     roots: ["schemas/dist/ErrorDefinition.schema.json"],
+  },
+  {
+    // v1.3.126 (lightweight tag): OrganizationSelectionRequiredError, the 409 body
+    // Cloud answers when a caller with several organizations names none.
+    repo: "meshery/schemas",
+    ref: "4c16367330b22359523b5dd87e39d2c29b140c4d",
+    sourcePr: "meshery/schemas v1.3.126",
+    dir: "meshery",
+    roots: ["schemas/constructs/v1beta2/core/api.yml"],
   },
 ];
 
@@ -74,13 +86,13 @@ async function refresh({ repo, ref, sourcePr, dir, roots }) {
     seen.add(file);
     if (file.startsWith("..")) throw new Error(`${repo} ${file}: $ref leaves the repo`);
     const bytes = await download(repo, ref, file);
-    const doc = JSON.parse(bytes.toString("utf8"));
+    const refs = file.endsWith(".json") ? refTargets(JSON.parse(bytes.toString("utf8")), file) : [];
     const dest = path.join(VENDOR, dir, file);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, bytes);
     files.push({ path: file, sha256: crypto.createHash("sha256").update(bytes).digest("hex") });
     process.stdout.write(`fetched ${repo} ${file}\n`);
-    queue.push(...refTargets(doc, file));
+    queue.push(...refs);
   }
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { repo, ref, sourcePr, dir, files };
@@ -90,6 +102,10 @@ async function main() {
   const sources = [];
   for (const source of SOURCES) sources.push(await refresh(source));
   fs.writeFileSync(path.join(VENDOR, "SOURCES.json"), JSON.stringify({ sources }, null, 2) + "\n");
+  const { OUT, expected } = await import("./org-required-schema.js");
+  fs.mkdirSync(path.dirname(OUT), { recursive: true });
+  fs.writeFileSync(OUT, expected());
+  process.stdout.write(`generated ${path.relative(HOSTED, OUT)}\n`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
