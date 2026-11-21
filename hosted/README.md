@@ -154,25 +154,27 @@ event for each call. Those now belong to Cloud, so after cutover:
   and `description`, which is `""` when the organization has none). The
   caller retries with one `id` as the `organizationId` tool argument (Cloud
   sends it as `X-Current-Orgid`). A `401` would tell its client to sign in
-  again, so on a `tools/call` (with a Bearer token) answered `409` (or `400`)
-  with that code, the Worker answers `200` with a JSON-RPC result: the
-  request's id, `isError: true`, `structuredContent` equal to Cloud's body
-  unchanged, a text block that leads with Cloud's `message`, lists each
-  choice's id and name and says to retry with `organizationId`, and no
-  `WWW-Authenticate`. The Worker invents no gateway error code. When Cloud's
-  own tool result (HTTP `200` JSON) already carries the same body in
-  `structuredContent`, it is passed through unchanged. A `401` that carries
-  the exact code is mapped the same way (defensive only, so it cannot become
-  a sign-in loop); every other `401` (token, audience, expiry, no Bearer, the
-  message-only "Organization context not set", any other code, non-JSON)
-  stays a `401` with the public challenge. `404` (a named organization the
-  caller does not belong to, or unknown) and `403` (no qualifying
-  organization) pass through unchanged, as does a `409` with another code
-  such as `idempotency_key_in_flight`. The match is on `code` only, never on
-  message text. Only a `400`, `401`, `409` or `200` `application/json` answer
-  to a `tools/call` is read, up to 64 KB; every other answer streams. The
-  Worker filters and defaults no organization, and forwards the body
-  (including `organizationId`) as sent.
+  again, so on a `tools/call` (with a Bearer token) answered `409` with a
+  body that has the schema's required shape (the code, a non-empty `message`,
+  at least 2 `choices` each with string `id`, `name` and `description`), the
+  Worker answers `200` with a JSON-RPC result: the request's id,
+  `isError: true`, `structuredContent` equal to Cloud's body unchanged, one
+  text block (Cloud's `message`, then one `- id: name` line per choice; the
+  Worker writes no sentence of its own), and no `WWW-Authenticate`. The
+  Worker invents no gateway error code. A `401` whose body conforms the same
+  way is mapped the same way (defensive only, so it cannot become a sign-in
+  loop); every other `401` (token, audience, expiry, no Bearer, the
+  message-only "Organization context not set", the code with a non-conforming
+  body, other codes, non-JSON) stays a `401` with the public challenge.
+  Cloud's own `200` tool result is streamed through unread, never buffered.
+  `400`, `403`, `404`, a `409` with another code or with the code but a
+  non-conforming body, and every other status pass through unchanged. The
+  match is on `code` and shape only, never on message text. Only a `409` or
+  `401` answer to a `tools/call` is read, up to 64 KB and within the 20 s
+  budget (a stalled or failing read is a `504` `blowhorn-mcp-1012` or `502`
+  `blowhorn-mcp-1011`); every other answer streams. The Worker filters and
+  defaults no organization, and forwards the body (including
+  `organizationId`) as sent.
 - The code and shape come from the vendored OpenAPI document
   `schemas/vendor/meshery/schemas/constructs/v1beta2/core/api.yml`
   (`OrganizationSelectionRequiredError`, pinned in

@@ -14,7 +14,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { Validator } from "@cfworker/json-schema";
 import worker from "../src/index.js";
-import { ORG_REQUIRED_CODE, MAX_CLASSIFY_BYTES } from "../src/orgrequired.js";
+import { ORG_REQUIRED_CODE, MAX_CLASSIFY_BYTES, orgRequiredBody } from "../src/orgrequired.js";
+import { CODES } from "../src/errors.js";
+import { TIMEOUT_MS } from "../src/proxy.js";
 import { API_FILE, expected, generate } from "../scripts/org-required-schema.js";
 import { VENDOR, vendored } from "../scripts/vendor.js";
 import schema from "../schemas/generated/org-required.schema.json" with { type: "json" };
@@ -58,7 +60,7 @@ async function assertToolError(res, id, body = BODY) {
   const text = doc.result.content[0].text;
   assert.strictEqual(doc.result.content.length, 1);
   assert.ok(text.startsWith(body.message), "Cloud's message leads");
-  assert.match(text, /organizationId/);
+  assert.strictEqual(text, [body.message, ...body.choices.map((c) => `- ${c.id}: ${c.name}`)].join("\n"), "Cloud's message and the choices only; no invented sentence");
   for (const c of body.choices) {
     assert.ok(text.includes(c.id), `text names ${c.id}`);
     assert.ok(text.includes(c.name), `text names ${c.name}`);
@@ -110,16 +112,33 @@ test("the generated schema accepts a legal body and rejects a one-choice, a miss
   assert.strictEqual(ok({ ...BODY, choices: [{ id: ORG_A, name: "x" }, BODY.choices[1]] }), false, "description is required");
 });
 
-test("a Cloud 409 with the body becomes a 200 tool error carrying the body as structuredContent, the choices and organizationId in the text", async (t) => {
+test("a Cloud 409 with the body becomes a 200 tool error carrying the body as structuredContent and the choices in the text", async (t) => {
   mockFetch(t, cloud(409, BODY, { ...JSON_TYPE, "WWW-Authenticate": 'Bearer realm="cloud"', "Retry-After": "3" }));
   const res = await worker.fetch(post(toolsCall(42)), ENV, {});
   await assertToolError(res, 42);
   assert.strictEqual(res.headers.get("Retry-After"), null);
 });
 
-test("a Cloud 400 with the body is mapped the same way", async (t) => {
-  mockFetch(t, cloud(400, BODY));
-  await assertToolError(await worker.fetch(post(toolsCall(7)), ENV, {}), 7);
+test("the runtime shape check agrees with the generated schema on what is legal and what is not", () => {
+  const { code: _c, message: _m, ...rest } = BODY;
+  const cases = [
+    BODY,
+    { ...BODY, choices: [BODY.choices[0]] },
+    { ...BODY, choices: [] },
+    { ...BODY, code: "other" },
+    { ...BODY, message: "" },
+    { ...BODY, message: 5 },
+    { ...rest, message: BODY.message },
+    { code: CODE },
+    { ...BODY, choices: [{ id: ORG_A, name: "x" }, BODY.choices[1]] },
+    { ...BODY, choices: [{ id: ORG_A, name: 1, description: "" }, BODY.choices[1]] },
+    { ...BODY, choices: "none" },
+    [BODY],
+    null,
+  ];
+  for (const doc of cases) {
+    assert.strictEqual(orgRequiredBody(doc) !== null, validator().validate(doc).valid, JSON.stringify(doc));
+  }
 });
 
 test("defensive: a Cloud 401 carrying the exact code is mapped the same way, so it cannot become a sign-in loop", async (t) => {
@@ -135,22 +154,27 @@ test("the request's own id comes back, string or number; a missing id is null", 
   await assertToolError(await worker.fetch(post(noId), ENV, {}), null);
 });
 
-test("a body without a message or choices still maps, with a generic message", async (t) => {
-  mockFetch(t, cloud(409, { code: CODE }));
-  const res = await worker.fetch(post(toolsCall(3)), ENV, {});
-  const doc = await res.json();
-  assert.strictEqual(res.status, 200);
-  assert.strictEqual(doc.result.isError, true);
-  assert.deepStrictEqual(doc.result.structuredContent, { code: CODE });
-  assert.match(doc.result.content[0].text, /organizationId/);
+test("a 409 or 401 with the code but a non-conforming body passes through unchanged, with no invented message", async (t) => {
+  const bad = [{ code: CODE }, { ...BODY, choices: [BODY.choices[0]] }, { ...BODY, message: "" }, { code: CODE, message: "pick one" }];
+  for (const status of [409, 401]) {
+    for (const body of bad) {
+      mockFetch(t, cloud(status, body, { ...JSON_TYPE, "WWW-Authenticate": "Bearer" }));
+      const res = await worker.fetch(post(toolsCall()), ENV, {});
+      assert.strictEqual(res.status, status, JSON.stringify(body));
+      assert.strictEqual(validator().validate(body).valid, false);
+      assert.deepStrictEqual(await res.json(), body);
+    }
+  }
 });
 
-test("a Cloud 200 tool result that already carries the body in structuredContent passes through byte for byte", async (t) => {
+test("a Cloud 200 tool result carrying code, message and choices in structuredContent is returned unchanged, unread", async (t) => {
   const text = `${BODY.message}\n- ${ORG_A}: Acme\n- ${ORG_B}: Globex\nRetry with organizationId.`;
   const raw = JSON.stringify({ jsonrpc: "2.0", id: 42, result: { isError: true, content: [{ type: "text", text }], structuredContent: BODY } });
+  assert.strictEqual(validator().validate(BODY).valid, true);
   mockFetch(t, cloud(200, raw));
   const res = await worker.fetch(post(toolsCall(42)), ENV, {});
   assert.strictEqual(res.status, 200);
+  assert.match(res.headers.get("Content-Type"), /^application\/json/);
   assert.strictEqual(await res.text(), raw);
 });
 
@@ -173,6 +197,15 @@ test("a token or audience 401 stays a 401 with the public challenge, and so does
     assert.strictEqual(res.status, 401, JSON.stringify(body));
     assert.match(res.headers.get("WWW-Authenticate"), new RegExp(`resource_metadata="${PRM.replaceAll(".", "\\.")}"`));
     assert.strictEqual(await res.text(), typeof body === "string" ? body : JSON.stringify(body), "the body is returned unchanged");
+  }
+});
+
+test("a 400, 403 or 404 carrying the full body is not mapped: the published contract is 409", async (t) => {
+  for (const status of [400, 403, 404]) {
+    mockFetch(t, cloud(status, BODY));
+    const res = await worker.fetch(post(toolsCall()), ENV, {});
+    assert.strictEqual(res.status, status);
+    assert.deepStrictEqual(await res.json(), BODY);
   }
 });
 
@@ -212,6 +245,43 @@ test("without a Bearer token the body is not read: Cloud's 401 and 409 stay as s
   const r = await worker.fetch(post(toolsCall(), { Authorization: "" }), ENV, {});
   assert.strictEqual(r.status, 409);
   assert.deepStrictEqual(await r.json(), BODY);
+});
+
+/** A Cloud answer whose body yields a first chunk and then stalls (never settles) or rejects. */
+function brokenBody(status, mode, headers = JSON_TYPE) {
+  let sent = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      if (!sent) {
+        sent = true;
+        return controller.enqueue(new TextEncoder().encode('{"code":'));
+      }
+      return mode === "reject" ? Promise.reject(new Error("socket reset")) : new Promise(() => {});
+    },
+  });
+  return new Response(body, { status, headers });
+}
+
+test("a 409 tools/call whose body stalls is cut off at the 20 s budget: 504 blowhorn-mcp-1012 with CORS, not a bare 500", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  mockFetch(t, () => brokenBody(409, "stall"));
+  const pending = worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  t.mock.timers.tick(TIMEOUT_MS);
+  const res = await pending;
+  assert.strictEqual(res.status, 504);
+  assert.strictEqual((await res.json()).error.data.code, CODES.upstream_timeout);
+  assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), "https://app.example.test");
+});
+
+test("a 409 or 401 tools/call whose body read fails is 502 blowhorn-mcp-1011 with CORS, not a bare 500", async (t) => {
+  for (const status of [409, 401]) {
+    mockFetch(t, () => brokenBody(status, "reject"));
+    const res = await worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
+    assert.strictEqual(res.status, 502);
+    assert.strictEqual((await res.json()).error.data.code, CODES.upstream_unreachable);
+    assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), "https://app.example.test");
+  }
 });
 
 test("an event-stream 200 and a 404 or 403 are never rewritten: they stream through as Cloud sent them", async (t) => {

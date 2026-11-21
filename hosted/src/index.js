@@ -28,7 +28,7 @@
 import { bearerToken } from "./auth.js";
 import { protectedResourceMetadata, publicChallenge } from "./metadata.js";
 import { BodyTimeoutError, MAX_REQUEST_BYTES, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
-import { MAX_CLASSIFY_BYTES, isOrgRequiredResult, messageId, orgRequiredBody, orgRequiredResult, parseJson, peek, worthReading } from "./orgrequired.js";
+import { MAX_CLASSIFY_BYTES, messageId, orgRequiredBody, orgRequiredResult, parseJson, peek, worthReading } from "./orgrequired.js";
 import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } from "./ratelimit.js";
 
 // Workers treat every named export of the main module as an entrypoint.
@@ -103,18 +103,23 @@ async function carry({ env, base, path, request, headers, body, cors, route }) {
   const upstream = result.response;
   const out = returnHeaders(upstream.headers);
   let answer = upstream.body;
-  // Cloud's organization-selection-required answer (HTTP 409 with a code, never a 401) becomes
-  // a tool error on a tools/call (src/orgrequired.js), keyed on Cloud's code, never on message
-  // text. A 200 tool result that already carries it passes through unchanged. Only a 400, 401,
-  // 409 or 200 JSON answer to a tools/call is read; all else streams.
+  // Cloud's organization-selection-required answer (HTTP 409 with a conforming body, never a
+  // 401) becomes a tool error on a tools/call (src/orgrequired.js), keyed on Cloud's code and
+  // shape, never on message text. Only a 409 or 401 answer to a tools/call is read; all else,
+  // a 200 tool result included, streams through unread.
   const call = route.kind === "mcp" ? toolsCallOf(request, body) : null;
   if (call && worthReading(upstream)) {
-    const seen = await peek(upstream, MAX_CLASSIFY_BYTES);
+    let seen;
+    try {
+      seen = await peek(upstream, MAX_CLASSIFY_BYTES);
+    } catch (err) {
+      const outcome = err instanceof BodyTimeoutError ? "upstream_timeout" : "upstream_unreachable";
+      log({ event: "upstream_failed", outcome, route: route.kind, error: err?.name ?? "Error" });
+      return failureResponse(outcome, cors);
+    }
     answer = seen.body;
     const doc = seen.bytes ? parseJson(seen.bytes) : undefined;
-    if (upstream.status === 200) {
-      if (isOrgRequiredResult(doc)) log({ event: "org_required", upstreamStatus: 200, passedThrough: true });
-    } else if (orgRequiredBody(doc)) {
+    if (orgRequiredBody(doc)) {
       log({ event: "org_required", upstreamStatus: upstream.status });
       out.delete("WWW-Authenticate");
       out.delete("Retry-After");
