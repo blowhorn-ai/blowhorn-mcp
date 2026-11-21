@@ -28,6 +28,7 @@
 import { bearerToken } from "./auth.js";
 import { protectedResourceMetadata, publicChallenge } from "./metadata.js";
 import { BodyTimeoutError, MAX_REQUEST_BYTES, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
+import { MAX_CLASSIFY_BYTES, bytesCarryOrgRequired, messageId, orgRequiredResult, peek, worthReading } from "./orgrequired.js";
 import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } from "./ratelimit.js";
 
 // Workers treat every named export of the main module as an entrypoint.
@@ -77,6 +78,21 @@ function isToolsCall(message) {
   return Object.entries(message).some(([key, value]) => key.toLowerCase() === "method" && value === "tools/call");
 }
 
+/**
+ * The parsed JSON-RPC message of a request body when it is a tools/call from a caller with a
+ * Bearer token, else null. A request with no token is an authentication failure, never an
+ * organization one. Never throws.
+ */
+function toolsCallOf(request, body) {
+  if (request.method !== "POST" || !body || !bearerToken(request.headers.get("Authorization"))) return null;
+  try {
+    const message = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+    return isToolsCall(message) ? message : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Carries the request to Cloud and returns its answer, or the failure's response. */
 async function carry({ env, base, path, request, headers, body, cors, route }) {
   const result = await forward({ base, path, method: request.method, headers, body });
@@ -84,13 +100,31 @@ async function carry({ env, base, path, request, headers, body, cors, route }) {
     log({ event: "upstream_failed", outcome: result.failure, route: route.kind, error: result.error });
     return failureResponse(result.failure, cors);
   }
-  const out = returnHeaders(result.response.headers);
+  const upstream = result.response;
+  const out = returnHeaders(upstream.headers);
+  let answer = upstream.body;
+  // Cloud's missing-organization answer is not an authentication failure. On a tools/call it
+  // becomes a tool error (src/orgrequired.js), keyed on Cloud's code, never on message text.
+  // Only a 400, 401 or 200 JSON answer to a tools/call is read; all else streams.
+  const call = route.kind === "mcp" ? toolsCallOf(request, body) : null;
+  if (call && worthReading(upstream)) {
+    const seen = await peek(upstream, MAX_CLASSIFY_BYTES);
+    answer = seen.body;
+    if (seen.bytes && bytesCarryOrgRequired(seen.bytes)) {
+      log({ event: "org_required", upstreamStatus: upstream.status });
+      out.delete("WWW-Authenticate");
+      out.delete("Retry-After");
+      out.set("Content-Type", "application/json");
+      for (const [k, v] of Object.entries(cors)) out.set(k, v);
+      return new Response(orgRequiredResult(messageId(call)), { status: 200, headers: out });
+    }
+  }
   // Point clients at this origin's RFC 9728 document, not Cloud's tenant host string.
-  if (route.kind === "mcp" && result.response.status === 401) {
-    out.set("WWW-Authenticate", publicChallenge(result.response.headers.get("WWW-Authenticate"), env));
+  if (route.kind === "mcp" && upstream.status === 401) {
+    out.set("WWW-Authenticate", publicChallenge(upstream.headers.get("WWW-Authenticate"), env));
   }
   for (const [k, v] of Object.entries(cors)) out.set(k, v);
-  return new Response(request.method === "HEAD" ? null : result.response.body, { status: result.response.status, headers: out });
+  return new Response(request.method === "HEAD" ? null : answer, { status: upstream.status, headers: out });
 }
 
 async function mcp(request, env, origin) {

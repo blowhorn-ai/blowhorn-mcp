@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcp.blowhorn.ai/schemas/org-required.schema.json",
+  "title": "HostedOrganizationRequired",
+  "description": "The machine-readable code Cloud puts on its missing-organization answer, and the message the Worker gives a tools/call caller when it maps that answer to a tool error. The code is the PROPOSED meshery/schemas code name; it is not published there yet. Once Cloud lands a definition in meshery/schemas, replace this file with the vendored definition (hosted/schemas/vendor/) and read the code from it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message"],
+  "properties": {
+    "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "message": { "type": "string", "minLength": 1 }
+  }
+}

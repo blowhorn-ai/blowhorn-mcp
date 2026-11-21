@@ -146,6 +146,23 @@ event for each call. Those now belong to Cloud, so after cutover:
   `401`, with `resource_metadata` rewritten to this origin. An RFC 6750 client
   treats the extra `resource_metadata` parameter as part of an ordinary Bearer
   challenge.
+- Cloud's missing-organization answer is a tool error, not a `401`. A caller
+  that is signed in but has no organization selected only has to pass
+  `organizationId`, and a `401` would tell its client to sign in again. When
+  a `tools/call` (with a Bearer token) is answered by Cloud with the code
+  `organization_required` (read from `schemas/org-required.json`; the proposed
+  meshery/schemas code, to be replaced by the vendored definition once Cloud
+  publishes it) as a `400`, a `401` or a `200` JSON result, the Worker answers
+  `200` with a JSON-RPC result whose `isError` is `true`, the request's id,
+  a text block asking for `organizationId`, and no `WWW-Authenticate`. The
+  code is found in `code`, a string `error`, `error.code`, `data.code`, or
+  the same places on the result or its `structuredContent`. The match is on
+  the code only, never on message text, so until Cloud emits the code its
+  `401` passes through unchanged. Only a `400`, a `401` or a `200`
+  `application/json` answer to a `tools/call` is read, up to 64 KB; every
+  other answer streams. Every other `401` (token, audience, expiry, no
+  Bearer) is unchanged, and the Worker still filters and defaults no
+  organization.
 - `DELETE /mcp`, a `GET` that carries a usable Bearer token, a batch without
   a token, the response size and timeout guards, argument validation and
   redaction are Cloud's decisions. A `GET` with no usable Bearer token is
