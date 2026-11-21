@@ -114,7 +114,13 @@ async function carry({ env, base, path, request, headers, body, cors, route }) {
       seen = await peek(upstream, MAX_CLASSIFY_BYTES);
     } catch (err) {
       const outcome = err instanceof BodyTimeoutError ? "upstream_timeout" : "upstream_unreachable";
-      log({ event: "upstream_failed", outcome, route: route.kind, error: err?.name ?? "Error" });
+      log({ event: "upstream_failed", outcome, route: route.kind, error: err?.name ?? "Error", upstreamStatus: upstream.status });
+      // A real token 401 must keep its challenge even if the body could not be classified.
+      if (upstream.status === 401) {
+        out.set("WWW-Authenticate", publicChallenge(upstream.headers.get("WWW-Authenticate"), env));
+        for (const [k, v] of Object.entries(cors)) out.set(k, v);
+        return new Response(null, { status: 401, headers: out });
+      }
       return failureResponse(outcome, cors);
     }
     answer = seen.body;

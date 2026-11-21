@@ -172,8 +172,9 @@ event for each call. Those now belong to Cloud, so after cutover:
   non-conforming body, and every other status pass through unchanged. The
   match is on `code` and shape only, never on message text. Only a `409` or
   `401` answer to a `tools/call` is read, up to 64 KB and within the 20 s
-  budget (a stalled or failing read is a `504` `blowhorn-mcp-1012` or `502`
-  `blowhorn-mcp-1011`); every other answer streams. The Worker filters and
+  budget (a stalled or failing `409` read is a `504` `blowhorn-mcp-1012` or
+  `502` `blowhorn-mcp-1011`; a stalled or failing `401` read still stays a
+  `401` with the public challenge); every other answer streams. The Worker filters and
   defaults no organization, and forwards the body (including
   `organizationId`) as sent.
 - The code and shape come from the vendored OpenAPI document

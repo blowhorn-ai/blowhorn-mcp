@@ -276,14 +276,33 @@ test("a 409 tools/call whose body stalls is cut off at the 20 s budget: 504 blow
   assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), "https://app.example.test");
 });
 
-test("a 409 or 401 tools/call whose body read fails is 502 blowhorn-mcp-1011 with CORS, not a bare 500", async (t) => {
-  for (const status of [409, 401]) {
-    mockFetch(t, () => brokenBody(status, "reject"));
-    const res = await worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
-    assert.strictEqual(res.status, 502);
-    assert.strictEqual((await res.json()).error.data.code, CODES.upstream_unreachable);
-    assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), "https://app.example.test");
-  }
+test("a 409 tools/call whose body read fails is 502 blowhorn-mcp-1011 with CORS, not a bare 500", async (t) => {
+  mockFetch(t, () => brokenBody(409, "reject"));
+  const res = await worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
+  assert.strictEqual(res.status, 502);
+  assert.strictEqual((await res.json()).error.data.code, CODES.upstream_unreachable);
+  assert.strictEqual(res.headers.get("Access-Control-Allow-Origin"), "https://app.example.test");
+});
+
+test("a 401 tools/call whose body stalls or fails still stays a 401 with the public challenge", async (t) => {
+  const challenge = 'Bearer error="invalid_token", resource_metadata="https://cloud.blowhorn.ai/.well-known/oauth-protected-resource/mcp"';
+  const headers = { ...JSON_TYPE, "WWW-Authenticate": challenge };
+  mockFetch(t, () => brokenBody(401, "reject", headers));
+  const rejected = await worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
+  assert.strictEqual(rejected.status, 401);
+  assert.match(rejected.headers.get("WWW-Authenticate"), new RegExp(`resource_metadata="${PRM.replaceAll(".", "\\.")}"`));
+  assert.strictEqual(rejected.headers.get("Access-Control-Allow-Origin"), "https://app.example.test");
+  assert.strictEqual(await rejected.text(), "");
+
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  mockFetch(t, () => brokenBody(401, "stall", headers));
+  const pending = worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  t.mock.timers.tick(TIMEOUT_MS);
+  const stalled = await pending;
+  assert.strictEqual(stalled.status, 401);
+  assert.match(stalled.headers.get("WWW-Authenticate"), new RegExp(`resource_metadata="${PRM.replaceAll(".", "\\.")}"`));
+  assert.strictEqual(await stalled.text(), "");
 });
 
 test("an event-stream 200 and a 404 or 403 are never rewritten: they stream through as Cloud sent them", async (t) => {
