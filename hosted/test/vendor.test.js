@@ -7,13 +7,17 @@ import path from "node:path";
 import { SOURCES, refTargets } from "../scripts/schemas-refresh.js";
 import { VENDOR, VendorError, readSources, source, vendorProblems, vendored } from "../scripts/vendor.js";
 
-test("the vendored tree matches SOURCES.json and holds only the ErrorDefinition construct", () => {
+test("the vendored tree matches SOURCES.json and holds only the ErrorDefinition construct and the core API document", () => {
   assert.deepStrictEqual(vendorProblems(), []);
   const sources = readSources();
-  assert.deepStrictEqual(sources.sources.map((s) => s.dir), ["blowhorn"]);
+  assert.deepStrictEqual(sources.sources.map((s) => s.dir), ["blowhorn", "meshery"]);
   assert.deepStrictEqual(sources.sources[0].files.map((f) => f.path), ["schemas/dist/ErrorDefinition.schema.json"]);
+  assert.deepStrictEqual(sources.sources[1].files.map((f) => f.path), ["schemas/constructs/v1beta2/core/api.yml"]);
+  assert.strictEqual(sources.sources[1].repo, "meshery/schemas");
+  assert.strictEqual(sources.sources[1].ref, "4c16367330b22359523b5dd87e39d2c29b140c4d");
+  assert.ok(fs.existsSync(vendored("meshery", "schemas/constructs/v1beta2/core/api.yml")));
   assert.ok(fs.existsSync(vendored("blowhorn", "schemas/dist/ErrorDefinition.schema.json")));
-  assert.throws(() => source(sources, "meshery-schemas"), VendorError);
+  assert.throws(() => source(sources, "nonexistent"), VendorError);
 });
 
 test("the vendor check fails on a file SOURCES.json does not list, on an edited one, on a missing one and on a stray folder", () => {

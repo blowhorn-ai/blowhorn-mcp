@@ -28,6 +28,7 @@
 import { bearerToken } from "./auth.js";
 import { protectedResourceMetadata, publicChallenge } from "./metadata.js";
 import { BodyTimeoutError, MAX_REQUEST_BYTES, REQUEST_HEADERS, ROUTES, VERSION, cloudBase, failureResponse, forward, forwardHeaders, readBounded, returnHeaders } from "./proxy.js";
+import { MAX_CLASSIFY_BYTES, messageId, orgRequiredBody, orgRequiredResult, parseJson, peek, worthReading } from "./orgrequired.js";
 import { RateLimiter, addressKey, callerKey, refusal, refuses, unavailable } from "./ratelimit.js";
 
 // Workers treat every named export of the main module as an entrypoint.
@@ -77,6 +78,21 @@ function isToolsCall(message) {
   return Object.entries(message).some(([key, value]) => key.toLowerCase() === "method" && value === "tools/call");
 }
 
+/**
+ * The parsed JSON-RPC message of a request body when it is a tools/call from a caller with a
+ * Bearer token, else null. A request with no token is an authentication failure, never an
+ * organization one. Never throws.
+ */
+function toolsCallOf(request, body) {
+  if (request.method !== "POST" || !body || !bearerToken(request.headers.get("Authorization"))) return null;
+  try {
+    const message = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+    return isToolsCall(message) ? message : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Carries the request to Cloud and returns its answer, or the failure's response. */
 async function carry({ env, base, path, request, headers, body, cors, route }) {
   const result = await forward({ base, path, method: request.method, headers, body });
@@ -84,13 +100,46 @@ async function carry({ env, base, path, request, headers, body, cors, route }) {
     log({ event: "upstream_failed", outcome: result.failure, route: route.kind, error: result.error });
     return failureResponse(result.failure, cors);
   }
-  const out = returnHeaders(result.response.headers);
+  const upstream = result.response;
+  const out = returnHeaders(upstream.headers);
+  let answer = upstream.body;
+  // Cloud's organization-selection-required answer (HTTP 409 with a conforming body, never a
+  // 401) becomes a tool error on a tools/call (src/orgrequired.js), keyed on Cloud's code and
+  // shape, never on message text. Only a 409 or 401 answer to a tools/call is read; all else,
+  // a 200 tool result included, streams through unread.
+  const call = route.kind === "mcp" ? toolsCallOf(request, body) : null;
+  if (call && worthReading(upstream)) {
+    let seen;
+    try {
+      seen = await peek(upstream, MAX_CLASSIFY_BYTES);
+    } catch (err) {
+      const outcome = err instanceof BodyTimeoutError ? "upstream_timeout" : "upstream_unreachable";
+      log({ event: "upstream_failed", outcome, route: route.kind, error: err?.name ?? "Error", upstreamStatus: upstream.status });
+      // A real token 401 must keep its challenge even if the body could not be classified.
+      if (upstream.status === 401) {
+        out.set("WWW-Authenticate", publicChallenge(upstream.headers.get("WWW-Authenticate"), env));
+        for (const [k, v] of Object.entries(cors)) out.set(k, v);
+        return new Response(null, { status: 401, headers: out });
+      }
+      return failureResponse(outcome, cors);
+    }
+    answer = seen.body;
+    const doc = seen.bytes ? parseJson(seen.bytes) : undefined;
+    if (orgRequiredBody(doc)) {
+      log({ event: "org_required", upstreamStatus: upstream.status });
+      out.delete("WWW-Authenticate");
+      out.delete("Retry-After");
+      out.set("Content-Type", "application/json");
+      for (const [k, v] of Object.entries(cors)) out.set(k, v);
+      return new Response(orgRequiredResult(messageId(call), doc), { status: 200, headers: out });
+    }
+  }
   // Point clients at this origin's RFC 9728 document, not Cloud's tenant host string.
-  if (route.kind === "mcp" && result.response.status === 401) {
-    out.set("WWW-Authenticate", publicChallenge(result.response.headers.get("WWW-Authenticate"), env));
+  if (route.kind === "mcp" && upstream.status === 401) {
+    out.set("WWW-Authenticate", publicChallenge(upstream.headers.get("WWW-Authenticate"), env));
   }
   for (const [k, v] of Object.entries(cors)) out.set(k, v);
-  return new Response(request.method === "HEAD" ? null : result.response.body, { status: result.response.status, headers: out });
+  return new Response(request.method === "HEAD" ? null : answer, { status: upstream.status, headers: out });
 }
 
 async function mcp(request, env, origin) {

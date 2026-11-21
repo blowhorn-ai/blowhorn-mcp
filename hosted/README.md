@@ -146,6 +146,45 @@ event for each call. Those now belong to Cloud, so after cutover:
   `401`, with `resource_metadata` rewritten to this origin. An RFC 6750 client
   treats the extra `resource_metadata` parameter as part of an ordinary Bearer
   challenge.
+- Cloud's organization-selection-required answer is a tool error, not a
+  `401`. When a caller has several organizations and names none, Cloud
+  answers `409` with the `OrganizationSelectionRequiredError` body published
+  in meshery/schemas v1.3.126: `code` (always `organization_selection_required`),
+  a non-empty `message`, and `choices` (at least 2 items of `id` UUID, `name`
+  and `description`, which is `""` when the organization has none). The
+  caller retries with one `id` as the `organizationId` tool argument (Cloud
+  sends it as `X-Current-Orgid`). A `401` would tell its client to sign in
+  again, so on a `tools/call` (with a Bearer token) answered `409` with a
+  body that has the schema's required shape (the code, a non-empty `message`,
+  at least 2 `choices` each with string `id`, `name` and `description`), the
+  Worker answers `200` with a JSON-RPC result: the request's id,
+  `isError: true`, `structuredContent` equal to Cloud's body unchanged, one
+  text block (Cloud's `message`, then one `- id: name` line per choice, then
+  a line telling the caller to choose an organization and retry with
+  `organizationId`), and no `WWW-Authenticate`. The
+  Worker invents no gateway error code. A `401` whose body conforms the same
+  way is mapped the same way (defensive only, so it cannot become a sign-in
+  loop); every other `401` (token, audience, expiry, no Bearer, the
+  message-only "Organization context not set", the code with a non-conforming
+  body, other codes, non-JSON) stays a `401` with the public challenge.
+  Cloud's own `200` tool result is streamed through unread, never buffered.
+  `400`, `403`, `404`, a `409` with another code or with the code but a
+  non-conforming body, and every other status pass through unchanged. The
+  match is on `code` and shape only, never on message text. Only a `409` or
+  `401` answer to a `tools/call` is read, up to 64 KB and within the 20 s
+  budget (a stalled or failing `409` read is a `504` `blowhorn-mcp-1012` or
+  `502` `blowhorn-mcp-1011`; a stalled or failing `401` read still stays a
+  `401` with the public challenge); every other answer streams. The Worker filters and
+  defaults no organization, and forwards the body (including
+  `organizationId`) as sent.
+- The code and shape come from the vendored OpenAPI document
+  `schemas/vendor/meshery/schemas/constructs/v1beta2/core/api.yml`
+  (`OrganizationSelectionRequiredError`, pinned in
+  `schemas/vendor/SOURCES.json`). `make hosted-schemas-refresh` regenerates
+  the JSON Schema `schemas/generated/org-required.schema.json` from it
+  (`scripts/org-required-schema.js`; the `yaml` parser is a dev dependency
+  only, the Worker imports the generated JSON), and `make hosted-check`
+  fails when the two differ. Never edit either by hand.
 - `DELETE /mcp`, a `GET` that carries a usable Bearer token, a batch without
   a token, the response size and timeout guards, argument validation and
   redaction are Cloud's decisions. A `GET` with no usable Bearer token is
@@ -475,7 +514,8 @@ with a real client, must pass before any cutover.
 | `src/errors.js` | Each reported outcome's code, and the retired codes |
 | `src/ratelimit.js` | The RateLimiter Durable Object, its keys and the 429 |
 | `schemas/rate-limits.schema.json` | The `RATE_LIMITS` config shape |
-| `schemas/vendor/` | The ErrorDefinition construct, byte for byte, pinned in `SOURCES.json` (`make hosted-schemas-refresh`) |
+| `schemas/vendor/` | The ErrorDefinition construct and meshery/schemas' core `api.yml`, byte for byte, pinned in `SOURCES.json` (`make hosted-schemas-refresh`) |
+| `schemas/generated/` | `org-required.schema.json`, generated from the vendored `api.yml` (never edited by hand) |
 | `errors/mcp.json` | The error code registry |
 | `scripts/` | check-drift, registry (the error registry check), vendor (the vendor check), schemas-refresh, require-node (the deploy's Node check), smoke-hosted (the opt-in live smoke) |
 | `test/` | Behavior tests, above |
