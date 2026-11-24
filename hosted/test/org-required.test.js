@@ -20,7 +20,7 @@ import { TIMEOUT_MS } from "../src/proxy.js";
 import { API_FILE, expected, generate } from "../scripts/org-required-schema.js";
 import { VENDOR, vendored } from "../scripts/vendor.js";
 import schema from "../schemas/generated/org-required.schema.json" with { type: "json" };
-import { ACCEPT, ENV, MCP, PRM, mockFetch } from "./support/harness.js";
+import { ACCEPT, ENV, MCP, PRM, deferred, mockFetch } from "./support/harness.js";
 
 const TOKEN = "org-required-test-token-0123456789";
 const JSON_TYPE = { "Content-Type": "application/json" };
@@ -249,16 +249,31 @@ test("without a Bearer token the body is not read: Cloud's 401 and 409 stay as s
   assert.deepStrictEqual(await r.json(), BODY);
 });
 
-/** A Cloud answer whose body yields a first chunk and then stalls (never settles) or rejects. */
-function brokenBody(status, mode, headers = JSON_TYPE) {
+/** A Cloud answer whose body yields a first chunk and then stalls or rejects.
+ * A stall is cancellable. `onStall` fires once the second pull is waiting, so a
+ * test can tick the read deadline only after peek has scheduled it. Waiting a
+ * fixed number of event-loop turns is a race: if tick runs first, the remaining
+ * timeout is a mocked timer, which does not keep the event loop alive, and the
+ * never-settling stall leaves the test promise pending. Node then cancels it
+ * (and the tests after it) with cancelledByParent. */
+function brokenBody(status, mode, headers = JSON_TYPE, { onStall } = {}) {
   let sent = false;
+  let rejectStall;
   const body = new ReadableStream({
     pull(controller) {
       if (!sent) {
         sent = true;
-        return controller.enqueue(new TextEncoder().encode('{"code":'));
+        controller.enqueue(new TextEncoder().encode('{"code":'));
+        return;
       }
-      return mode === "reject" ? Promise.reject(new Error("socket reset")) : new Promise(() => {});
+      if (mode === "reject") return Promise.reject(new Error("socket reset"));
+      onStall?.();
+      return new Promise((_, reject) => {
+        rejectStall = reject;
+      });
+    },
+    cancel(reason) {
+      rejectStall?.(reason ?? new DOMException("aborted", "AbortError"));
     },
   });
   return new Response(body, { status, headers });
@@ -266,9 +281,10 @@ function brokenBody(status, mode, headers = JSON_TYPE) {
 
 test("a 409 tools/call whose body stalls is cut off at the 20 s budget: 504 blowhorn-mcp-1012 with CORS, not a bare 500", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  mockFetch(t, () => brokenBody(409, "stall"));
+  const started = deferred();
+  mockFetch(t, () => brokenBody(409, "stall", JSON_TYPE, { onStall: started.resolve }));
   const pending = worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
-  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  await started.promise;
   t.mock.timers.tick(TIMEOUT_MS);
   const res = await pending;
   assert.strictEqual(res.status, 504);
@@ -287,6 +303,7 @@ test("a 409 tools/call whose body read fails is 502 blowhorn-mcp-1011 with CORS,
 test("a 401 tools/call whose body stalls or fails still stays a 401 with the public challenge", async (t) => {
   const challenge = 'Bearer error="invalid_token", resource_metadata="https://cloud.blowhorn.ai/.well-known/oauth-protected-resource/mcp"';
   const headers = { ...JSON_TYPE, "WWW-Authenticate": challenge };
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   mockFetch(t, () => brokenBody(401, "reject", headers));
   const rejected = await worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
   assert.strictEqual(rejected.status, 401);
@@ -294,10 +311,10 @@ test("a 401 tools/call whose body stalls or fails still stays a 401 with the pub
   assert.strictEqual(rejected.headers.get("Access-Control-Allow-Origin"), "https://app.example.test");
   assert.strictEqual(await rejected.text(), "");
 
-  t.mock.timers.enable({ apis: ["setTimeout"] });
-  mockFetch(t, () => brokenBody(401, "stall", headers));
+  const started = deferred();
+  mockFetch(t, () => brokenBody(401, "stall", headers, { onStall: started.resolve }));
   const pending = worker.fetch(post(toolsCall(), { Origin: "https://app.example.test" }), ENV, {});
-  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  await started.promise;
   t.mock.timers.tick(TIMEOUT_MS);
   const stalled = await pending;
   assert.strictEqual(stalled.status, 401);
