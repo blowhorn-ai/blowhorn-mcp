@@ -112,7 +112,9 @@ test("registryProblems names what the construct and the gateway's own rules refu
     [(r) => (r.nextErrorCode = 1016), /nextErrorCode is 1016; want 1015, one past the highest code/],
     [(r) => (r.definitions[3].probableCauses = []), /definitions\[3\] blowhorn-mcp-1003: no probable cause/],
     [(r) => { delete r.definitions[3].probableCauses; }, /definitions\[3\] blowhorn-mcp-1003: no probable cause/],
+    [(r) => { delete r.definitions[3].shortDescription; }, /definitions\[3\] blowhorn-mcp-1003: shortDescription is missing or empty/],
     [(r) => (r.definitions[5].probableCauses[1].remediations = []), /definitions\[5\] blowhorn-mcp-1005: cause call-too-big has no remediation/],
+    [(r) => (r.definitions[5].probableCauses = [null]), /definitions\[5\] blowhorn-mcp-1005 \/probableCauses\/0:[\s\S]*definitions\[5\] blowhorn-mcp-1005: cause \(no id\) has no remediation/],
     [(r) => (r.definitions[2].moniker = "ErrUnknownTool"), /definitions\[2\] blowhorn-mcp-1002: moniker ErrUnknownTool is used twice/],
   ];
   for (const [mutate, want] of cases) {
