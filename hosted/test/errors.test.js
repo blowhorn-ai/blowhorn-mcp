@@ -103,6 +103,8 @@ test("registryProblems names what the construct and the gateway's own rules refu
   const cases = [
     [(r) => (r.definitions[0].reason = "a gateway-only clause."), /definitions\[0\] blowhorn-mcp-1000 \/: Property "reason" does not match additional properties schema/],
     [(r) => (r.definitions[1].code = "blowhorn-mcp-1000"), /definitions\[1\] blowhorn-mcp-1000: code is used twice/],
+    [(r) => (r.definitions[1].code = "blowhorn-mcp-10000"), /definitions\[1\] blowhorn-mcp-10000: code must be blowhorn-mcp-NNNN/],
+    [(r) => (r.definitions[1].numericCode = "1002"), /definitions\[1\] blowhorn-mcp-1001: numericCode 1002 is not 1001/],
     [(r) => (r.nextErrorCode = 1014), /blowhorn-mcp-1014: number is not below nextErrorCode 1014/],
     [(r) => (r.definitions[6].component = { type: "blowhorn", name: "engine" }), /blowhorn-mcp-1006: component is not blowhorn\/mcp/],
     [(r) => (r.component = { type: "blowhorn", name: "engine" }), /component is not \{"type": "blowhorn", "name": "mcp"\}/],
