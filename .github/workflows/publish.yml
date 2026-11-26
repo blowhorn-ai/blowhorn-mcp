@@ -3,7 +3,8 @@ name: Publish to npm and the MCP Registry
 # Started by `make publish` after `make release` created tag v<version>.
 # Publishes with provenance through npm trusted publishing (OIDC): npm trusts
 # this workflow file in the `npm` environment, so no token is stored. Then
-# publishes server.json to the MCP Registry with GitHub OIDC.
+# publishes server.json to the MCP Registry with GitHub OIDC, then redeploys
+# the hosted gateway.
 
 on:
   workflow_dispatch:
@@ -159,3 +160,16 @@ jobs:
         run: |
           "$RUNNER_TEMP/mcp-publisher/mcp-publisher" login github-oidc
           "$RUNNER_TEMP/mcp-publisher/mcp-publisher" publish
+
+  # Deploys only after the release published, so the master check and the
+  # tag-on-master check have passed. The deploy jobs keep their own production
+  # environment and master-only rules.
+  hosted:
+    name: Deploy the hosted gateway
+    needs: publish
+    uses: ./.github/workflows/hosted-deploy.yml
+    with:
+      reason: blowhorn-mcp release v${{ inputs.version }}
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
