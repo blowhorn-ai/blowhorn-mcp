@@ -1,12 +1,26 @@
 name: Hosted deploy
 
-# Deploys the interim gateway Worker (hosted/) on merge to master, then
-# smoke-tests it. Two independent jobs: production (https://mcp.blowhorn.ai)
-# and staging (https://mcp-staging.blowhorn.ai, in front of staging Cloud). A
-# failure in one never skips or undoes the other. `make hosted-deploy` and
+# Deploys the interim gateway Worker (hosted/), then smoke-tests it. It starts
+# three ways: a push to master that touches hosted/**, a blowhorn-mcp release
+# (publish.yml calls this workflow after a successful publish), and a
+# workflow_dispatch from blowhorn-ai/blowhorn's hosted-mcp-dispatch.yml after a
+# desktop release that changed a file the gateway vendors from
+# blowhorn-ai/blowhorn (hosted/schemas/vendor/SOURCES.json). Every path deploys
+# master's tip at deploy time. The release path runs from master after
+# publish.yml checked the tag is on master, and each deploy job checks out
+# master's tip after it holds its concurrency slot, so a slow release never
+# deploys an older SHA over a newer push.
+#
+# Two independent deploy jobs: production (https://mcp.blowhorn.ai) and staging
+# (https://mcp-staging.blowhorn.ai, in front of staging Cloud). A failure in
+# one never skips or undoes the other. `make hosted-deploy` and
 # `make hosted-deploy-staging` run the Node check, npm ci, and hosted-check
 # before wrangler deploy, so each job runs it once instead of paying for
 # hosted-check twice. The same targets stay the manual and emergency path.
+# A dispatch with targets=staging skips production, for a safe staging-only
+# test. On push and on workflow_call, targets is empty, which means both.
+# desktop-pins only warns when a desktop release's files differ from the pin.
+# The deploy jobs run alongside it.
 
 on:
   push:
@@ -14,24 +28,112 @@ on:
     paths:
       - hosted/**
       - .github/workflows/hosted-deploy.yml
+  # blowhorn-ai/blowhorn's hosted-mcp-dispatch.yml dispatches this after a
+  # desktop release that changed a vendored file. targets=staging skips
+  # production. The string inputs default to empty.
   workflow_dispatch:
+    inputs:
+      targets:
+        description: Which gateways to deploy. staging skips production, for a safe staging-only test. both deploys production and staging.
+        required: false
+        type: choice
+        options:
+          - both
+          - staging
+        default: both
+      reason:
+        description: 'Why this deploy was started (for example "desktop release desktop-v2.18.0")'
+        required: false
+        type: string
+        default: ""
+      desktop_tag:
+        description: Desktop release tag that triggered this deploy, when started by blowhorn-ai/blowhorn
+        required: false
+        type: string
+        default: ""
+      previous_desktop_tag:
+        description: Previous desktop release tag, the start of the range that triggered this deploy
+        required: false
+        type: string
+        default: ""
+      source_files:
+        description: 'JSON array of {"path","sha256"} for the blowhorn-ai/blowhorn files the gateway vendors, as they are at desktop_tag'
+        required: false
+        type: string
+        default: ""
+  # publish.yml calls this after a release. targets is not an input here, so
+  # it is empty and both gateways deploy. The secrets are optional because a
+  # push or a dispatch uses this repo's own secrets, while a caller passes them.
+  workflow_call:
+    inputs:
+      reason:
+        description: Why this deploy was started
+        required: false
+        type: string
+        default: ""
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        description: Cloudflare API token for wrangler deploy
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        description: Cloudflare account id for wrangler deploy
+        required: false
 
 permissions:
   contents: read
-
-concurrency:
-  group: hosted-deploy-production
-  cancel-in-progress: false
 
 jobs:
   deploy:
     name: make hosted-deploy
     runs-on: ubuntu-latest
     environment: production
+    # targets=staging is a safe staging-only test and skips production. On
+    # push and on workflow_call, targets is empty, so this runs. The production
+    # environment's branch policy allows only master.
+    if: inputs.targets != 'staging'
+    # On the job so the group still serializes production deploys across a
+    # push, a dispatch and a release's workflow_call, including when
+    # publish.yml calls this workflow.
+    concurrency:
+      group: hosted-deploy-production
+      cancel-in-progress: false
+      queue: max
     steps:
+      # Inputs arrive through the environment so a dispatch from another
+      # repository cannot inject a script.
+      - name: Record the trigger
+        env:
+          REASON: ${{ inputs.reason }}
+          DESKTOP_TAG: ${{ inputs.desktop_tag }}
+          PREVIOUS_DESKTOP_TAG: ${{ inputs.previous_desktop_tag }}
+        run: |
+          {
+            echo "### Trigger"
+            echo ""
+            printf -- '- Event: %s\n' "$GITHUB_EVENT_NAME"
+            printf -- '- Ref: %s\n' "$GITHUB_REF"
+            printf -- '- SHA: %s\n' "$GITHUB_SHA"
+            if [ -n "$REASON" ]; then
+              printf -- '- Reason: %s\n' "$REASON"
+            fi
+            if [ -n "$DESKTOP_TAG" ]; then
+              printf -- '- Desktop tag: %s\n' "$DESKTOP_TAG"
+            fi
+            if [ -n "$PREVIOUS_DESKTOP_TAG" ]; then
+              printf -- '- Previous desktop tag: %s\n' "$PREVIOUS_DESKTOP_TAG"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Checks out master's tip after it holds the slot, so a slow release
+      # never deploys an older SHA over a newer push. Each release and each
+      # push keeps its own queued deploy and smoke-test result. The publish
+      # lock queues every release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/heads/master
           persist-credentials: false
+      - name: Record the deployed commit
+        run: |
+          printf -- '- Deployed commit: %s\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: hosted/.nvmrc
@@ -67,15 +169,49 @@ jobs:
     # is independent of the production job. The production environment's
     # branch policy does not cover this job, so it is held to master here: a
     # workflow_dispatch from another branch never deploys that branch's code
-    # in front of staging Cloud.
+    # in front of staging Cloud. Under workflow_call, github.ref is the
+    # caller's ref, and publish.yml only runs from master.
     if: github.ref == 'refs/heads/master'
     concurrency:
       group: hosted-deploy-staging
       cancel-in-progress: false
+      queue: max
     steps:
+      # Inputs arrive through the environment so a dispatch from another
+      # repository cannot inject a script.
+      - name: Record the trigger
+        env:
+          REASON: ${{ inputs.reason }}
+          DESKTOP_TAG: ${{ inputs.desktop_tag }}
+          PREVIOUS_DESKTOP_TAG: ${{ inputs.previous_desktop_tag }}
+        run: |
+          {
+            echo "### Trigger"
+            echo ""
+            printf -- '- Event: %s\n' "$GITHUB_EVENT_NAME"
+            printf -- '- Ref: %s\n' "$GITHUB_REF"
+            printf -- '- SHA: %s\n' "$GITHUB_SHA"
+            if [ -n "$REASON" ]; then
+              printf -- '- Reason: %s\n' "$REASON"
+            fi
+            if [ -n "$DESKTOP_TAG" ]; then
+              printf -- '- Desktop tag: %s\n' "$DESKTOP_TAG"
+            fi
+            if [ -n "$PREVIOUS_DESKTOP_TAG" ]; then
+              printf -- '- Previous desktop tag: %s\n' "$PREVIOUS_DESKTOP_TAG"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Checks out master's tip after it holds the slot, so a slow release
+      # never deploys an older SHA over a newer push. Each release and each
+      # push keeps its own queued deploy and smoke-test result. The publish
+      # lock queues every release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/heads/master
           persist-credentials: false
+      - name: Record the deployed commit
+        run: |
+          printf -- '- Deployed commit: %s\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: hosted/.nvmrc
@@ -94,6 +230,145 @@ jobs:
           # and the 401 challenge against hosted/schemas/deployments.json.
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
             node hosted/scripts/check-deployment.js staging && exit 0
+            echo "staging check failed (attempt $attempt of 12); retrying in 10s"
             sleep 10
           done
           exit 1
+
+  # Warns when a desktop release changed a file this repo vendors from
+  # blowhorn-ai/blowhorn. The deploy jobs do not need this job, so a difference
+  # here cannot hold a deploy back. Invalid source_files JSON is the only
+  # failure; a hash difference is a warning.
+  desktop-pins:
+    name: Compare desktop release pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: inputs.source_files != ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The runner's Node is enough: this only reads the pin file and the
+      # dispatch payload. source_files is untrusted, so it stays in the
+      # environment. A path that differs, or that SOURCES.json does not pin,
+      # warns with the ref the gateway still vendors and how to refresh it.
+      - name: Compare vendored pins to the desktop release
+        env:
+          SOURCE_FILES: ${{ inputs.source_files }}
+          DESKTOP_TAG: ${{ inputs.desktop_tag }}
+        run: |
+          node <<'JS'
+          "use strict";
+
+          const fs = require("fs");
+
+          // Workflow commands are parsed from stdout. Encode the bytes that
+          // would split one command into a second one.
+          function workflowData(value) {
+            return String(value).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+          }
+
+          function fail(message) {
+            console.log("::error::" + workflowData(message));
+            process.exitCode = 1;
+          }
+
+          function cell(value) {
+            return String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+          }
+
+          // One physical line, so a tag or an error string cannot break the summary.
+          function oneLine(value) {
+            return String(value).replace(/`/g, "'").replace(/\r?\n/g, " ");
+          }
+
+          function main() {
+            let released;
+            try {
+              released = JSON.parse(process.env.SOURCE_FILES || "");
+            } catch (err) {
+              fail("source_files is not valid JSON");
+              return;
+            }
+            if (!Array.isArray(released)) {
+              fail("source_files must be a JSON array of {path, sha256}");
+              return;
+            }
+            for (let i = 0; i < released.length; i++) {
+              const item = released[i];
+              if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.path !== "string" || typeof item.sha256 !== "string") {
+                fail("source_files must be a JSON array of {path, sha256}");
+                return;
+              }
+            }
+
+            let pinnedRef = "no blowhorn-ai/blowhorn pin";
+            const pinnedByPath = new Map();
+            let pinNote = "";
+            try {
+              const doc = JSON.parse(fs.readFileSync("hosted/schemas/vendor/SOURCES.json", "utf8"));
+              const sources = doc && Array.isArray(doc.sources) ? doc.sources : [];
+              let entry = null;
+              for (let i = 0; i < sources.length; i++) {
+                if (sources[i] && sources[i].repo === "blowhorn-ai/blowhorn") {
+                  entry = sources[i];
+                  break;
+                }
+              }
+              if (entry && typeof entry.ref === "string" && entry.ref) pinnedRef = entry.ref;
+              const files = entry && Array.isArray(entry.files) ? entry.files : [];
+              for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (file && typeof file.path === "string") {
+                  pinnedByPath.set(file.path, typeof file.sha256 === "string" ? file.sha256 : "");
+                }
+              }
+            } catch (err) {
+              pinnedRef = "unreadable SOURCES.json";
+              pinNote = err && err.message ? err.message : String(err);
+              console.log("::warning::could not read hosted/schemas/vendor/SOURCES.json: " + workflowData(pinNote));
+            }
+
+            const desktopTag = process.env.DESKTOP_TAG || "(unset)";
+            const rows = [];
+            for (let i = 0; i < released.length; i++) {
+              const item = released[i];
+              const has = pinnedByPath.has(item.path);
+              const pinned = has ? pinnedByPath.get(item.path) : "";
+              let status = "match";
+              if (!has) status = "not pinned";
+              else if (pinned !== item.sha256) status = "differs";
+              if (status !== "match") {
+                console.log(
+                  "::warning::the desktop release " + workflowData(desktopTag) +
+                  " changed " + workflowData(item.path) +
+                  " and the gateway still vendors it at " + workflowData(pinnedRef) +
+                  "; refresh the pin in hosted/scripts/schemas-refresh.js and run make hosted-schemas-refresh"
+                );
+              }
+              rows.push({
+                path: item.path,
+                pinned: has ? pinned : "(none)",
+                released: item.sha256,
+                status: status,
+              });
+            }
+
+            const lines = ["### Desktop release pins", ""];
+            if (process.env.DESKTOP_TAG) lines.push("Desktop tag: `" + oneLine(process.env.DESKTOP_TAG) + "`", "");
+            lines.push("Pinned blowhorn-ai/blowhorn ref: `" + oneLine(pinnedRef) + "`", "");
+            if (pinNote) lines.push("Pin file: " + oneLine(pinNote), "");
+            lines.push("| path | pinned sha256 | released sha256 | status |");
+            lines.push("| --- | --- | --- | --- |");
+            for (let i = 0; i < rows.length; i++) {
+              const row = rows[i];
+              lines.push("| " + cell(row.path) + " | " + cell(row.pinned) + " | " + cell(row.released) + " | " + cell(row.status) + " |");
+            }
+            lines.push("");
+            if (process.env.GITHUB_STEP_SUMMARY) {
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n"));
+            }
+          }
+
+          main();
+          JS
