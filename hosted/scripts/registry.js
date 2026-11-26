@@ -4,9 +4,13 @@
  * definition against the vendored ErrorDefinition construct
  * (schemas/vendor/blowhorn/), plus the gateway's own rules: the component is
  * blowhorn/mcp, codes and monikers are unique, nextErrorCode is one past the
- * highest code, every definition names at least one probable cause and every
- * cause at least one remediation (the construct's description asks the
- * registry check for these; it has no minItems), and every outcome
+ * highest code, every definition has a non-empty shortDescription (omitting
+ * it is still allowed by the construct, but src/proxy.js uses it as the
+ * JSON-RPC error message, so this check refuses a missing or empty one),
+ * every definition names at least one probable cause and every cause at least
+ * one remediation (the construct's minItems refuses an empty list; omitting
+ * probableCauses is still allowed by the construct, so this check refuses
+ * that too), and every outcome
  * src/errors.js maps has a definition, and every definition is either mapped
  * or a retired tombstone. blowhorn-ai/blowhorn's registry has
  * further rules of its own; they are not copied here, so they cannot drift.
@@ -66,8 +70,13 @@ export function registryProblems(registry = readRegistry(), schema = errorDefini
     const { valid, errors } = validator.validate(d);
     if (!valid) {
       for (const e of errors) problems.push(`${where} ${e.instanceLocation.replace(/^#/, "") || "/"}: ${e.error}`);
-      return;
     }
+    if (typeof d?.shortDescription !== "string" || d.shortDescription.trim() === "") problems.push(`${where}: shortDescription is missing or empty`);
+    if (Array.isArray(d?.probableCauses)) {
+      if (!d.probableCauses.length) problems.push(`${where}: no probable cause`);
+      for (const c of d.probableCauses) if (!c?.remediations?.length) problems.push(`${where}: cause ${c?.id ?? "(no id)"} has no remediation`);
+    } else if (valid) problems.push(`${where}: no probable cause`);
+    if (!valid) return;
     const number = Number(d.code.slice(-4));
     highest = Math.max(highest, number);
     if (!isDeepStrictEqual(d.component, COMPONENT)) problems.push(`${where}: component is not blowhorn/mcp`);
@@ -76,8 +85,6 @@ export function registryProblems(registry = readRegistry(), schema = errorDefini
     seen.add(d.code);
     if (monikers.has(d.moniker)) problems.push(`${where}: moniker ${d.moniker} is used twice`);
     monikers.add(d.moniker);
-    if (!d.probableCauses.length) problems.push(`${where}: no probable cause`);
-    for (const c of d.probableCauses) if (!c.remediations.length) problems.push(`${where}: cause ${c.id} has no remediation`);
   });
   if (Number.isFinite(highest) && Number.isInteger(nextErrorCode) && nextErrorCode !== highest + 1) {
     problems.push(`  nextErrorCode is ${nextErrorCode}; want ${highest + 1}, one past the highest code`);

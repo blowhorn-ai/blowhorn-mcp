@@ -350,6 +350,7 @@ refused `tools/call`'s `id`, as below; the address limit's answers `id`
       "code": "blowhorn-mcp-1010",
       "moniker": "ErrRateLimited",
       "component": { "type": "blowhorn", "name": "mcp" },
+      "numericCode": "1010",
       "severity": "warning",
       "shortDescription": "Too many requests: the gateway's rate limit refused this one.",
       "longDescription": "The gateway limits how many tool calls one token can make, and how many requests one network address can send, in a minute, so a runaway client cannot flood Blowhorn Cloud or the activity feed. This request was over a limit, so nothing was sent to Cloud and nothing was recorded in your activity. The Retry-After header says how many seconds to wait.",
@@ -370,8 +371,10 @@ refused `tools/call`'s `id`, as below; the address limit's answers `id`
 ```
 
 `data` is an ErrorDefinition instance: blowhorn-mcp-1010 from
-`errors/mcp.json`, every field the construct requires and no other, with
-only the cause of the limit that refused, its remediations kept:
+`errors/mcp.json`. It carries every field the construct requires (`code`,
+`moniker`, `component`, `numericCode`) and the severity, both descriptions,
+probable causes and reference URL the gateway records, and no other field,
+with only the cause of the limit that refused, its remediations kept:
 `too-many-calls` for the caller limit, as above, and `shared-address` for
 the address limit ("Requests from every client on this network address
 count together, and together they passed the per-address limit.", with the
@@ -433,10 +436,11 @@ printf '{"token": "%s"}' "$TOKEN" | curl -sS -X POST https://cloud.blowhorn.ai/r
 
 The gateway's error codes are data, `errors/mcp.json`, in the shape of
 blowhorn-ai/blowhorn's error code registry (`component`, `nextErrorCode`,
-`definitions`). Each definition has a code, a moniker, a severity, a short
-and a long description, a reference URL, and probable causes that each
-carry the remediations that answer them. None has an `action`: only a
-person or their client can do any of them.
+`definitions`). Each definition has a code, its `numericCode` (the digits at the end of
+the code), a moniker, a severity, a short and a long description, a
+reference URL, and probable causes that each carry the remediations that
+answer them. None has an `action` or an `actionPolicy`: only a person or
+their client can do any of them.
 
 | Code | Moniker | Outcome |
 |------|---------|---------|

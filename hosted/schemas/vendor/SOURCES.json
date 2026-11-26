@@ -2,13 +2,13 @@
   "sources": [
     {
       "repo": "blowhorn-ai/blowhorn",
-      "ref": "cd3dbf98121066fdc656078f40e886b129e3867a",
-      "sourcePr": "blowhorn-ai/blowhorn#1672",
+      "ref": "04a4e27be92fa25c370387245447d1cb75642541",
+      "sourcePr": "blowhorn-ai/blowhorn desktop-v2.18.0",
       "dir": "blowhorn",
       "files": [
         {
           "path": "schemas/dist/ErrorDefinition.schema.json",
-          "sha256": "6b14536deba1c24240d18b209fb5800f05395e6c27ac69be8adc33302e166e90"
+          "sha256": "305d1796a160e16a7c404b94c14e7aa336664f827292dbb57833d3e9bab1e5af"
         }
       ]
     },

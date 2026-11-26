@@ -161,7 +161,9 @@ async function assertRefused(res, name, id = name === "caller" ? 1 : null, retry
   assert.strictEqual(body.error.message, d.shortDescription);
   const { valid, errors } = DATA.validate(body.error.data);
   assert.ok(valid, errors.map((e) => `${e.instanceLocation} ${e.error}`).join("; "));
-  assert.deepStrictEqual(Object.keys(body.error.data).sort(), [...DEFINITION.required].sort(), "every required field, and no other");
+  const published = ["code", "moniker", "component", "numericCode", "severity", "shortDescription", "longDescription", "probableCauses", "referenceUrl"];
+  assert.deepStrictEqual(DEFINITION.required.filter((key) => !published.includes(key)), [], `a required field is missing from the published set: ${DEFINITION.required.join(", ")}`);
+  assert.deepStrictEqual(Object.keys(body.error.data).sort(), [...published].sort(), "every field the gateway records, including every field the construct requires, and no other");
   assert.deepStrictEqual(body.error.data, { ...d, probableCauses: d.probableCauses.filter((c) => c.id === LIMITS[name].cause) });
   assert.strictEqual(body.error.data.code, "blowhorn-mcp-1010");
   assert.strictEqual(body.error.data.probableCauses.length, 1);
