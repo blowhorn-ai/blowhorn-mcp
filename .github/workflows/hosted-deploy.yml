@@ -97,6 +97,7 @@ jobs:
     concurrency:
       group: hosted-deploy-production
       cancel-in-progress: false
+      queue: max
     steps:
       # Inputs arrive through the environment so a dispatch from another
       # repository cannot inject a script.
@@ -122,10 +123,10 @@ jobs:
               printf -- '- Previous desktop tag: %s\n' "$PREVIOUS_DESKTOP_TAG"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-      # The job checks out master's tip after it holds its concurrency slot, so
-      # a slow release run never deploys an older SHA over a newer push, and a
-      # pending run that GitHub replaces with a newer one in the same group
-      # loses nothing because the newer one deploys master's tip too.
+      # Checks out master's tip after it holds the slot, so a slow release
+      # never deploys an older SHA over a newer push. Each release and each
+      # push keeps its own queued deploy and smoke-test result. The publish
+      # lock queues every release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/heads/master
@@ -174,6 +175,7 @@ jobs:
     concurrency:
       group: hosted-deploy-staging
       cancel-in-progress: false
+      queue: max
     steps:
       # Inputs arrive through the environment so a dispatch from another
       # repository cannot inject a script.
@@ -199,10 +201,10 @@ jobs:
               printf -- '- Previous desktop tag: %s\n' "$PREVIOUS_DESKTOP_TAG"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-      # The job checks out master's tip after it holds its concurrency slot, so
-      # a slow release run never deploys an older SHA over a newer push, and a
-      # pending run that GitHub replaces with a newer one in the same group
-      # loses nothing because the newer one deploys master's tip too.
+      # Checks out master's tip after it holds the slot, so a slow release
+      # never deploys an older SHA over a newer push. Each release and each
+      # push keeps its own queued deploy and smoke-test result. The publish
+      # lock queues every release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/heads/master
