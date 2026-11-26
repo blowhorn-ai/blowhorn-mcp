@@ -21,6 +21,13 @@ test("every definition validates against the vendored ErrorDefinition construct"
   for (const d of registry.definitions) {
     const { valid, errors } = validator.validate(d);
     assert.ok(valid, `${d.code}: ${errors.map((e) => `${e.instanceLocation} ${e.error}`).join("; ")}`);
+    const number = d.code.slice(d.code.lastIndexOf("-") + 1);
+    assert.strictEqual(d.numericCode, number, `${d.code} numericCode is the digits at the end of code`);
+    assert.ok(d.code.endsWith(`-${d.numericCode}`), d.code);
+    for (const r of d.probableCauses.flatMap((c) => c.remediations)) {
+      assert.strictEqual(r.action, undefined, `${d.code} ${r.id}`);
+      assert.strictEqual(r.actionPolicy, undefined, `${d.code} ${r.id}`);
+    }
   }
   assert.deepStrictEqual(registryProblems(), []);
 });
@@ -73,7 +80,7 @@ test("blowhorn-mcp-1010 is ErrRateLimited, a warning, and none of its remediatio
   assert.strictEqual(d.severity, "warning");
   for (const r of d.probableCauses.flatMap((c) => c.remediations)) {
     assert.strictEqual(r.action, undefined, r.id);
-    assert.strictEqual(r.approvalPolicy, undefined, r.id);
+    assert.strictEqual(r.actionPolicy, undefined, r.id);
   }
 });
 
@@ -104,6 +111,7 @@ test("registryProblems names what the construct and the gateway's own rules refu
     [(r) => (r.extra = true), /keys are \$comment, component, definitions, extra, nextErrorCode/],
     [(r) => (r.nextErrorCode = 1016), /nextErrorCode is 1016; want 1015, one past the highest code/],
     [(r) => (r.definitions[3].probableCauses = []), /definitions\[3\] blowhorn-mcp-1003: no probable cause/],
+    [(r) => { delete r.definitions[3].probableCauses; }, /definitions\[3\] blowhorn-mcp-1003: no probable cause/],
     [(r) => (r.definitions[5].probableCauses[1].remediations = []), /definitions\[5\] blowhorn-mcp-1005: cause call-too-big has no remediation/],
     [(r) => (r.definitions[2].moniker = "ErrUnknownTool"), /definitions\[2\] blowhorn-mcp-1002: moniker ErrUnknownTool is used twice/],
   ];

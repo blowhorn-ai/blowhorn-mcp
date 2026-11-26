@@ -31,9 +31,10 @@ const VENDOR = path.join(HOSTED, "schemas", "vendor");
  */
 export const SOURCES = [
   {
+    // desktop-v2.18.0: the ErrorDefinition construct the latest published desktop release ships.
     repo: "blowhorn-ai/blowhorn",
-    ref: "cd3dbf98121066fdc656078f40e886b129e3867a",
-    sourcePr: "blowhorn-ai/blowhorn#1672",
+    ref: "04a4e27be92fa25c370387245447d1cb75642541",
+    sourcePr: "blowhorn-ai/blowhorn desktop-v2.18.0",
     dir: "blowhorn",
     roots: ["schemas/dist/ErrorDefinition.schema.json"],
   },
