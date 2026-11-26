@@ -3,8 +3,10 @@
  * Checks hosted/errors/mcp.json, the gateway's error code registry: every
  * definition against the vendored ErrorDefinition construct
  * (schemas/vendor/blowhorn/), plus the gateway's own rules: the component is
- * blowhorn/mcp, codes and monikers are unique, nextErrorCode is one past the
- * highest code, every definition has a non-empty shortDescription (omitting
+ * blowhorn/mcp, a code is blowhorn-mcp-NNNN and its numericCode equals those
+ * digits (the construct allows a number of any length), codes and monikers
+ * are unique, nextErrorCode is one past the highest of those numbers, every
+ * definition has a non-empty shortDescription (omitting
  * it is still allowed by the construct, but src/proxy.js uses it as the
  * JSON-RPC error message, so this check refuses a missing or empty one),
  * every definition names at least one probable cause and every cause at least
@@ -77,10 +79,19 @@ export function registryProblems(registry = readRegistry(), schema = errorDefini
       for (const c of d.probableCauses) if (!c?.remediations?.length) problems.push(`${where}: cause ${c?.id ?? "(no id)"} has no remediation`);
     } else if (valid) problems.push(`${where}: no probable cause`);
     if (!valid) return;
-    const number = Number(d.code.slice(-4));
-    highest = Math.max(highest, number);
+    // The construct's code pattern allows any length of trailing digits.
+    // The gateway allocates exactly four, and the number is those digits,
+    // never the last four characters of a longer code.
+    const codeMatch = /^blowhorn-mcp-([0-9]{4})$/.exec(d.code);
+    if (!codeMatch) {
+      problems.push(`${where}: code must be blowhorn-mcp-NNNN`);
+    } else if (d.numericCode !== codeMatch[1]) {
+      problems.push(`${where}: numericCode ${d.numericCode} is not ${codeMatch[1]}`);
+    }
+    const number = codeMatch ? Number(codeMatch[1]) : NaN;
+    if (codeMatch) highest = Math.max(highest, number);
     if (!isDeepStrictEqual(d.component, COMPONENT)) problems.push(`${where}: component is not blowhorn/mcp`);
-    if (!(number < nextErrorCode)) problems.push(`${where}: number is not below nextErrorCode ${nextErrorCode}`);
+    if (codeMatch && !(number < nextErrorCode)) problems.push(`${where}: number is not below nextErrorCode ${nextErrorCode}`);
     if (seen.has(d.code)) problems.push(`${where}: code is used twice`);
     seen.add(d.code);
     if (monikers.has(d.moniker)) problems.push(`${where}: moniker ${d.moniker} is used twice`);

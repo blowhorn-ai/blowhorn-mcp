@@ -469,10 +469,12 @@ still resolves.
 `make hosted-check` validates every definition against the vendored
 ErrorDefinition construct (`schemas/vendor/blowhorn/`) and checks the
 gateway's own rules (`scripts/registry.js`): the component is
-`blowhorn`/`mcp`, codes and monikers are unique, `nextErrorCode` is one
-past the highest code, every definition has at least one probable cause and
-every cause at least one remediation, every outcome `src/errors.js` maps has
-a definition, and every definition is either mapped or retired, never both.
+`blowhorn`/`mcp`, a code is `blowhorn-mcp-NNNN` and its `numericCode` is
+those digits, codes and monikers are unique, `nextErrorCode` is one past
+the highest of those numbers, every definition has at least one probable
+cause and every cause at least one remediation, every outcome
+`src/errors.js` maps has a definition, and every definition is either
+mapped or retired, never both.
 `test/errors.test.js` holds the table above to the definitions, `CODES` and
 `RETIRED`, both ways. blowhorn-ai/blowhorn's registry has further rules of
 its own that are not copied here. To add a code: add its definition with the
