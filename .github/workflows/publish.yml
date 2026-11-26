@@ -17,14 +17,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: publish-npm
-  cancel-in-progress: false
-
 jobs:
   publish:
     runs-on: ubuntu-latest
     environment: npm
+    # The hosted deploy must not hold the publishing lock.
+    concurrency:
+      group: publish-npm
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write

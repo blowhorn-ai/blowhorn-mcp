@@ -6,9 +6,10 @@ name: Hosted deploy
 # workflow_dispatch from blowhorn-ai/blowhorn's hosted-mcp-dispatch.yml after a
 # desktop release that changed a file the gateway vendors from
 # blowhorn-ai/blowhorn (hosted/schemas/vendor/SOURCES.json). Every path deploys
-# master's code. The release path runs from master after publish.yml checked
-# the tag is on master, so it deploys master HEAD (which contains the tag) and
-# never rolls back hosted code merged after the tag.
+# master's tip at deploy time. The release path runs from master after
+# publish.yml checked the tag is on master, and each deploy job checks out
+# master's tip after it holds its concurrency slot, so a slow release never
+# deploys an older SHA over a newer push.
 #
 # Two independent deploy jobs: production (https://mcp.blowhorn.ai) and staging
 # (https://mcp-staging.blowhorn.ai, in front of staging Cloud). A failure in
@@ -121,9 +122,17 @@ jobs:
               printf -- '- Previous desktop tag: %s\n' "$PREVIOUS_DESKTOP_TAG"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      # The job checks out master's tip after it holds its concurrency slot, so
+      # a slow release run never deploys an older SHA over a newer push, and a
+      # pending run that GitHub replaces with a newer one in the same group
+      # loses nothing because the newer one deploys master's tip too.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/heads/master
           persist-credentials: false
+      - name: Record the deployed commit
+        run: |
+          printf -- '- Deployed commit: %s\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: hosted/.nvmrc
@@ -190,9 +199,17 @@ jobs:
               printf -- '- Previous desktop tag: %s\n' "$PREVIOUS_DESKTOP_TAG"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      # The job checks out master's tip after it holds its concurrency slot, so
+      # a slow release run never deploys an older SHA over a newer push, and a
+      # pending run that GitHub replaces with a newer one in the same group
+      # loses nothing because the newer one deploys master's tip too.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/heads/master
           persist-credentials: false
+      - name: Record the deployed commit
+        run: |
+          printf -- '- Deployed commit: %s\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: hosted/.nvmrc
