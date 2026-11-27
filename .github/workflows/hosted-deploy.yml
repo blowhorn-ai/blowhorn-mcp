@@ -235,10 +235,10 @@ jobs:
           done
           exit 1
 
-  # Warns when a desktop release changed a file this repo vendors from
-  # blowhorn-ai/blowhorn. The deploy jobs do not need this job, so a difference
-  # here cannot hold a deploy back. Invalid source_files JSON is the only
-  # failure; a hash difference is a warning.
+  # Warns when a desktop release changed or removed a file this repo vendors
+  # from blowhorn-ai/blowhorn. The deploy jobs do not need this job, so a
+  # difference here cannot hold a deploy back. Invalid source_files JSON is
+  # the only failure; a hash difference or a removed file is a warning.
   desktop-pins:
     name: Compare desktop release pins
     runs-on: ubuntu-latest
@@ -296,7 +296,8 @@ jobs:
             }
             for (let i = 0; i < released.length; i++) {
               const item = released[i];
-              if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.path !== "string" || typeof item.sha256 !== "string") {
+              // A deleted file arrives as sha256 null. Anything else must be a string.
+              if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.path !== "string" || (item.sha256 !== null && typeof item.sha256 !== "string")) {
                 fail("source_files must be a JSON array of {path, sha256}");
                 return;
               }
@@ -336,9 +337,23 @@ jobs:
               const has = pinnedByPath.has(item.path);
               const pinned = has ? pinnedByPath.get(item.path) : "";
               let status = "match";
-              if (!has) status = "not pinned";
+              if (item.sha256 === null) status = "removed";
+              else if (!has) status = "not pinned";
               else if (pinned !== item.sha256) status = "differs";
-              if (status !== "match") {
+              if (status === "removed" && has) {
+                console.log(
+                  "::warning::the desktop release " + workflowData(desktopTag) +
+                  " removed " + workflowData(item.path) +
+                  ", which the gateway still vendors at " + workflowData(pinnedRef) +
+                  "; drop it from hosted/scripts/schemas-refresh.js or re-pin, then run make hosted-schemas-refresh"
+                );
+              } else if (status === "removed") {
+                console.log(
+                  "::warning::the desktop release " + workflowData(desktopTag) +
+                  " removed " + workflowData(item.path) +
+                  ", which the gateway does not vendor"
+                );
+              } else if (status !== "match") {
                 console.log(
                   "::warning::the desktop release " + workflowData(desktopTag) +
                   " changed " + workflowData(item.path) +
@@ -349,7 +364,7 @@ jobs:
               rows.push({
                 path: item.path,
                 pinned: has ? pinned : "(none)",
-                released: item.sha256,
+                released: item.sha256 === null ? "(removed)" : item.sha256,
                 status: status,
               });
             }
