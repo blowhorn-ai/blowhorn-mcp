@@ -31,6 +31,26 @@ function engineTree(root) {
   return root;
 }
 
+/**
+ * A stand-in front door that serves MCP: it answers the launcher's coverage check with 0, and
+ * otherwise prints its argv and the variables the launcher may set, echoes stdin and exits 6.
+ */
+function stubFrontDoor(file) {
+  return write(file, '#!/bin/sh\n[ "$2" = "--check-coverage" ] && exit 0\necho "argv:$*"\necho "PYTHONPATH:${PYTHONPATH-unset}"\necho "BLOWHORN_MCP_CLI:${BLOWHORN_MCP_CLI-unset}"\ncat\nexit 6\n', 0o755);
+}
+
+/** A front door from an older app: it has no `mcp-server`, so it refuses the word with a usage error (exit 2). */
+function oldFrontDoor(file) {
+  return write(file, '#!/bin/sh\necho "Error: No such command $1." >&2\nexit 2\n', 0o755);
+}
+
+/** An app bundle whose engine has its own `blowhorn` front door beside the Python one (a newer app). */
+function appBundleWithFrontDoor(appsDir) {
+  const engine = appBundle(appsDir);
+  stubFrontDoor(path.join(engine, "bin", "blowhorn"));
+  return engine;
+}
+
 /** engine.json as the app writes it, naming `checkout` and `python`. */
 function engineRecord(home, record) {
   write(path.join(home, "Library", "Application Support", "Blowhorn", "engine.json"), JSON.stringify(record));
@@ -166,6 +186,60 @@ test("/Applications wins when both it and ~/Applications have a Blowhorn.app", (
   appBundle(path.join(home, "Applications"));
   const server = L.resolveServer([], { env: { PATH: pathWithBlowhorn() }, home, applicationsDirs: [system, path.join(home, "Applications")] });
   assert.strictEqual(server.file, path.join(engine, "bin", "python"));
+});
+
+test("/Applications: a bundle with its own blowhorn serves MCP through it, with no blowhorn on PATH and no Python", () => {
+  const apps = scratch();
+  const engine = appBundleWithFrontDoor(apps);
+  const server = L.resolveServer(["--list-tools"], { env: { PATH: NO_BLOWHORN_PATH }, home: scratch(), applicationsDirs: [apps] });
+  assert.strictEqual(server.file, path.join(engine, "bin", "blowhorn"));
+  assert.deepStrictEqual(server.args, ["mcp-server", "--list-tools"]);
+  const r = execute(server, "ping\n");
+  assert.strictEqual(r.status, 6);
+  assert.strictEqual(r.stdout, "argv:mcp-server --list-tools\nPYTHONPATH:unset\nBLOWHORN_MCP_CLI:unset\nping\n");
+});
+
+test("a bundle with its own blowhorn: a BLOWHORN_MCP_CLI the user set reaches it as given", () => {
+  const apps = scratch();
+  appBundleWithFrontDoor(apps);
+  const server = L.resolveServer([], { env: { PATH: NO_BLOWHORN_PATH, BLOWHORN_MCP_CLI: "/opt/mine/blowhorn" }, home: scratch(), applicationsDirs: [apps] });
+  assert.match(execute(server).stdout, /\nBLOWHORN_MCP_CLI:\/opt\/mine\/blowhorn\n/);
+});
+
+test("a bundle with its own blowhorn: the front door serves, not the bundle's Python engine", () => {
+  const apps = scratch();
+  const engine = appBundleWithFrontDoor(apps);
+  const server = L.resolveServer([], { env: { PATH: pathWithBlowhorn() }, home: scratch(), applicationsDirs: [apps] });
+  assert.notStrictEqual(server.file, path.join(engine, "bin", "python"));
+  assert.strictEqual(server.file, path.join(engine, "bin", "blowhorn"));
+});
+
+test("an older app's blowhorn that has no mcp-server is asked once and passed over: its Python engine serves", () => {
+  const apps = scratch();
+  const engine = appBundle(apps);
+  oldFrontDoor(path.join(engine, "bin", "blowhorn"));
+  const server = L.resolveServer(["--list-tools"], { env: { PATH: pathWithBlowhorn() }, home: scratch(), applicationsDirs: [apps] });
+  assert.strictEqual(server.file, path.join(engine, "bin", "python"));
+  assert.deepStrictEqual(server.args, ["-P", "-m", "blowhorn.mcp_server", "--list-tools"]);
+});
+
+test("a bundle blowhorn that is not executable is ignored: an older app's Python engine serves", () => {
+  const apps = scratch();
+  const engine = appBundle(apps);
+  write(path.join(engine, "bin", "blowhorn"), "#!/bin/sh\n", 0o644);
+  const server = L.resolveServer([], { env: { PATH: pathWithBlowhorn() }, home: scratch(), applicationsDirs: [apps] });
+  assert.strictEqual(server.file, path.join(engine, "bin", "python"));
+});
+
+test("engine.json still wins over a bundle's blowhorn: the recorded engine serves", () => {
+  const apps = scratch();
+  appBundleWithFrontDoor(apps);
+  const checkout = engineTree(scratch());
+  const python = stubPython(path.join(scratch(), "python"));
+  const home = scratch();
+  engineRecord(home, { checkout, python });
+  const server = L.resolveServer([], { env: { PATH: pathWithBlowhorn() }, home, applicationsDirs: [apps] });
+  assert.strictEqual(server.file, python);
 });
 
 test("setup incomplete: the bundle's engine but no blowhorn command anywhere refuses before the server starts", () => {

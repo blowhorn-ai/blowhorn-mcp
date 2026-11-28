@@ -2,24 +2,29 @@
 // SPDX-License-Identifier: Apache-2.0
 "use strict";
 /*
- * The npm launcher for blowhorn-mcp. The MCP server itself is the Python
- * `blowhorn.mcp_server` module that ships inside the Blowhorn app; this
- * launcher finds it and runs it over stdio, handing every argument, stdin,
- * stdout and the exit code straight through.
+ * The npm launcher for blowhorn-mcp. The MCP server itself ships inside the
+ * Blowhorn app (its `blowhorn mcp-server`; older apps carry the Python
+ * `blowhorn.mcp_server` module instead); this launcher finds it and runs it
+ * over stdio, handing every argument, stdin, stdout and the exit code
+ * straight through.
  *
  * Where it looks, first match wins:
  *   1. ~/.local/bin/blowhorn-mcp, the launcher the app writes (never this
  *      npm launcher, never a node script);
  *   2. the engine the app recorded in ~/Library/Application Support/Blowhorn/engine.json
  *      (its `python`, with PYTHONPATH <checkout>/engine);
- *   3. the app bundle's own engine: /Applications/Blowhorn.app, then
- *      ~/Applications/Blowhorn.app (the order the app-written shim uses).
+ *   3. the app bundle: /Applications/Blowhorn.app, then ~/Applications/Blowhorn.app
+ *      (the order the app-written shim uses). Its own `blowhorn` command serves
+ *      MCP (`blowhorn mcp-server`) and is also the command every tool call runs;
+ *      the launcher asks it once whether it can (an older app's `blowhorn` has no
+ *      `mcp-server`). An older app falls back to the bundle's Python engine.
  *
- * Routes 2 and 3 run `python -P -m`: plain `-m` puts the MCP client's working
- * directory first on sys.path, so a json.py or blowhorn/ in that folder would
- * shadow the server's own modules. -P needs Python 3.11; the engine's floor is 3.14.
+ * The Python routes (2, and 3 on an older app) run `python -P -m`: plain `-m` puts
+ * the MCP client's working directory first on sys.path, so a json.py or blowhorn/
+ * in that folder would shadow the server's own modules. -P needs Python 3.11;
+ * the engine's floor is 3.14.
  *
- * Routes 2 and 3 also need the `blowhorn` command every tool call runs. The
+ * The Python routes also need the `blowhorn` command every tool call runs. The
  * launcher resolves it the way the server's default_cli does
  * (engine/blowhorn/mcp_server/__main__.py), with ~/.local/bin/blowhorn second,
  * since a GUI MCP client's PATH lacks ~/.local/bin: BLOWHORN_MCP_CLI as given,
@@ -33,12 +38,15 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 // The shared launcher core, which the private repo's blowhorn-axi launcher uses too.
 const { INSTALL_URL, toon, isExecutable, realpath, findOnPath, findInstalledLauncher, passthrough } = require("../lib/launcher-common.js");
 
 const PKG = require("../package.json");
 const SERVER_MODULE = "blowhorn.mcp_server";
+/** How long an app's `blowhorn` may take to say whether it serves MCP. An older one starts its Python engine to refuse (about 1.5 s). */
+const PROBE_TIMEOUT_MS = 15000;
 
 /** The interpreter and PYTHONPATH of an engine that holds the MCP server, or null. */
 function engineAt(python, pythonPath) {
@@ -61,6 +69,20 @@ function recordedEngine(home) {
   }
   if (!doc || typeof doc.checkout !== "string" || typeof doc.python !== "string" || !doc.checkout || !doc.python) return null;
   return engineAt(doc.python, path.join(doc.checkout, "engine"));
+}
+
+/**
+ * The app bundle's own `blowhorn` command, which serves MCP itself and runs every tool call, or
+ * null when the bundle has none that can serve. An app's `blowhorn` is no proof by itself: older
+ * apps carry one that has no `mcp-server`, and their Python engine serves instead. So it is asked
+ * once, with the server's own coverage check (it reads only the tool list and exits 0 when it
+ * can serve); a refusal, a failure or a hang past the bound means it cannot.
+ */
+function bundleFrontDoor(engineDir, env) {
+  const door = path.join(engineDir, "bin", "blowhorn");
+  if (!isExecutable(door)) return null;
+  const asked = spawnSync(door, ["mcp-server", "--check-coverage"], { env, stdio: "ignore", timeout: PROBE_TIMEOUT_MS });
+  return asked.status === 0 ? door : null;
 }
 
 /** The first Blowhorn.app under `applicationsDirs`, in order, or null. */
@@ -106,7 +128,10 @@ function resolveServer(argv, { env = process.env, home = os.homedir(), applicati
   if (shim) return { file: shim, args: argv, env };
   const bundle = findBundle(applicationsDirs);
   const engineDir = bundle && path.join(bundle, "Contents", "Resources", "engine");
-  const engine = recordedEngine(home) || (bundle && engineAt(path.join(engineDir, "bin", "python"), path.join(engineDir, "engine")));
+  const recorded = recordedEngine(home);
+  const door = !recorded && bundle ? bundleFrontDoor(engineDir, env) : null;
+  if (door) return { file: door, args: ["mcp-server", ...argv], env };
+  const engine = recorded || (bundle && engineAt(path.join(engineDir, "bin", "python"), path.join(engineDir, "engine")));
   if (engine) {
     const server = serverEnv(env, engine.pythonPath, home);
     if (server.error) return server;

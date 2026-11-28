@@ -5,6 +5,13 @@ launcher's, which every listing file follows.
 
 ## Unreleased
 
+- The launcher serves MCP through the app bundle's own `blowhorn mcp-server`
+  when the bundle's `blowhorn` can (it is asked once with `mcp-server
+  --check-coverage`), instead of the bundle's Python engine. An older app
+  whose `blowhorn` has no `mcp-server` still falls back to its Python engine,
+  and `~/.local/bin/blowhorn-mcp` and a recorded engine keep their place
+  ahead of the bundle.
+
 - Cursor plugin is marketplace-ready: the official 512 logo, a maintainer author with email, and the README, skill, `llms-install.md` and listing text name all six hosted tools.
 - Replace `assets/blowhorn-logo-400.png` with the official 512x512 connector icon at `assets/blowhorn-logo-512.png`, downloaded from https://blowhorn.ai/assets/brand/logo/blowhorn-app-icon-square-512.png.
 - `hosted/`: `GET` and `HEAD /.well-known/openai-apps-challenge` return the
